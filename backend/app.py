@@ -177,6 +177,7 @@ def summary():
         SELECT
             COALESCE(SUM(CASE WHEN type = 'expense' AND date LIKE %s THEN amount END), 0) as spent,
             COALESCE(SUM(CASE WHEN type = 'income' AND date LIKE %s THEN amount END), 0) as earned
+        FROM transactions
         """,
         (f"{month_prefix}%", f"{month_prefix}%"),
     )
