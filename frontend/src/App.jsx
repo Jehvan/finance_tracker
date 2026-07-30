@@ -11,8 +11,9 @@ import {
 // e.g. https://finance-tracker-api.onrender.com/api
 // Locally, it falls back to whatever host you loaded the page from,
 // so it works whether you open it via localhost or your LAN IP.
-const API_BASE =
-  import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:5000/api`;
+const API_BASE = (
+  import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:5000/api`
+).replace(/\/+$/, "");
 
 const COLORS = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA", "#F87171", "#4ADE80"];
 
