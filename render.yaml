@@ -7,6 +7,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7   # psycopg2-binary has no wheels yet for the 3.14 Render defaults to
       - key: ALPHAVANTAGE_API_KEY
         sync: false   # set this manually in the Render dashboard
       - key: DATABASE_URL
