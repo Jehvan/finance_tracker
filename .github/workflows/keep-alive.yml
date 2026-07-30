@@ -1,0 +1,13 @@
+name: Keep backend warm
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend
+        run: curl -sS -o /dev/null -w "%{http_code}\n" https://finance-tracker-api-aait.onrender.com/api/login
