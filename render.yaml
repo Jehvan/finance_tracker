@@ -13,6 +13,14 @@ services:
         sync: false   # set this manually in the Render dashboard
       - key: DATABASE_URL
         sync: false   # set this to your Supabase connection string
+      - key: SECRET_KEY
+        generateValue: true   # Render generates a random signing secret for login tokens
+      - key: ADMIN_USERNAME
+        sync: false   # the username you'll log in with
+      - key: ADMIN_PASSWORD_HASH
+        sync: false   # generate with: python3 -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('yourpassword'))"
+      - key: FRONTEND_ORIGIN
+        sync: false   # set to your deployed frontend's exact URL, e.g. https://finance-tracker-frontend.onrender.com
 
   - type: web
     name: finance-tracker-frontend

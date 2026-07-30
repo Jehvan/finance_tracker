@@ -16,12 +16,90 @@ const API_BASE =
 
 const COLORS = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA", "#F87171", "#4ADE80"];
 
+const TOKEN_KEY = "finance_tracker_token";
+
+function LoginForm({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) {
+        setError("Invalid username or password.");
+        return;
+      }
+      const { token } = await res.json();
+      onLogin(token);
+    } catch (e) {
+      setError("Can't reach the server.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <h1>Finance Tracker</h1>
+      </header>
+      <main className="tab-content">
+        <form className="quick-add" onSubmit={handleSubmit}>
+          <input
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
+            required
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+          />
+          <button type="submit" disabled={busy}>
+            {busy ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+        {error && <div className="empty-state">{error}</div>}
+      </main>
+    </div>
+  );
+}
+
 function Money({ value }) {
   const n = Number(value ?? 0);
   return <span>{n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
 }
 
-function SpendingTab() {
+function makeAuthFetch(token, onUnauthorized) {
+  return async function authFetch(url, options = {}) {
+    const res = await fetch(url, {
+      ...options,
+      headers: { ...options.headers, Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 401) {
+      onUnauthorized();
+      throw new Error("unauthorized");
+    }
+    return res;
+  };
+}
+
+function SpendingTab({ authFetch }) {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({ by_category: [], spent: 0, earned: 0 });
   const [form, setForm] = useState({ amount: "", category: "", note: "", type: "expense" });
@@ -32,8 +110,8 @@ function SpendingTab() {
     try {
       setError(null);
       const [txRes, sumRes] = await Promise.all([
-        fetch(`${API_BASE}/transactions`),
-        fetch(`${API_BASE}/summary`),
+        authFetch(`${API_BASE}/transactions`),
+        authFetch(`${API_BASE}/summary`),
       ]);
       setTransactions(await txRes.json());
       setSummary(await sumRes.json());
@@ -42,7 +120,7 @@ function SpendingTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authFetch]);
 
   useEffect(() => {
     load();
@@ -51,7 +129,7 @@ function SpendingTab() {
   async function handleAdd(e) {
     e.preventDefault();
     if (!form.amount || !form.category) return;
-    await fetch(`${API_BASE}/transactions`, {
+    await authFetch(`${API_BASE}/transactions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
@@ -61,7 +139,7 @@ function SpendingTab() {
   }
 
   async function handleDelete(id) {
-    await fetch(`${API_BASE}/transactions/${id}`, { method: "DELETE" });
+    await authFetch(`${API_BASE}/transactions/${id}`, { method: "DELETE" });
     load();
   }
 
@@ -164,7 +242,7 @@ function SpendingTab() {
   );
 }
 
-function InvestingTab() {
+function InvestingTab({ authFetch }) {
   const [holdings, setHoldings] = useState([]);
   const [form, setForm] = useState({ symbol: "", asset_type: "crypto", quantity: "", avg_buy_price: "" });
   const [loading, setLoading] = useState(true);
@@ -173,14 +251,14 @@ function InvestingTab() {
   const load = useCallback(async () => {
     try {
       setError(null);
-      const res = await fetch(`${API_BASE}/holdings`);
+      const res = await authFetch(`${API_BASE}/holdings`);
       setHoldings(await res.json());
     } catch (e) {
       setError("Can't reach the server. Is the Flask backend running?");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authFetch]);
 
   useEffect(() => {
     load();
@@ -189,7 +267,7 @@ function InvestingTab() {
   async function handleAdd(e) {
     e.preventDefault();
     if (!form.symbol || !form.quantity || !form.avg_buy_price) return;
-    await fetch(`${API_BASE}/holdings`, {
+    await authFetch(`${API_BASE}/holdings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
@@ -199,7 +277,7 @@ function InvestingTab() {
   }
 
   async function handleDelete(id) {
-    await fetch(`${API_BASE}/holdings/${id}`, { method: "DELETE" });
+    await authFetch(`${API_BASE}/holdings/${id}`, { method: "DELETE" });
     load();
   }
 
@@ -289,6 +367,21 @@ function InvestingTab() {
 
 export default function App() {
   const [tab, setTab] = useState("spending");
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
+
+  function handleLogin(newToken) {
+    localStorage.setItem(TOKEN_KEY, newToken);
+    setToken(newToken);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem(TOKEN_KEY);
+    setToken(null);
+  }
+
+  if (!token) return <LoginForm onLogin={handleLogin} />;
+
+  const authFetch = makeAuthFetch(token, handleLogout);
 
   return (
     <div className="app">
@@ -307,9 +400,12 @@ export default function App() {
           >
             Investing
           </button>
+          <button onClick={handleLogout}>Log out</button>
         </nav>
       </header>
-      <main>{tab === "spending" ? <SpendingTab /> : <InvestingTab />}</main>
+      <main>
+        {tab === "spending" ? <SpendingTab authFetch={authFetch} /> : <InvestingTab authFetch={authFetch} />}
+      </main>
     </div>
   );
 }

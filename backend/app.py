@@ -1,18 +1,63 @@
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 
+import jwt
 import psycopg2
 import psycopg2.extras
 import requests
 from flask import Flask, g, jsonify, request
 from flask_cors import CORS
+from werkzeug.security import check_password_hash
 
 DATABASE_URL = os.environ["DATABASE_URL"]  # Supabase connection string
 PRICE_CACHE_SECONDS = 15 * 60  # refresh prices at most every 15 min
 
+SECRET_KEY = os.environ["SECRET_KEY"]  # random string, used to sign login tokens
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD_HASH = os.environ["ADMIN_PASSWORD_HASH"]  # generate with werkzeug.security.generate_password_hash
+TOKEN_TTL_DAYS = 30
+
 app = Flask(__name__)
-CORS(app)  # allow the frontend (different domain) to call this API
+CORS(app, origins=[os.environ["FRONTEND_ORIGIN"]])  # only the deployed frontend may call this API
+
+
+# ---------- Auth ----------
+
+def require_auth(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "missing bearer token"}), 401
+        token = auth_header.removeprefix("Bearer ").strip()
+        try:
+            jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        except jwt.PyJWTError:
+            return jsonify({"error": "invalid or expired token"}), 401
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    data = request.get_json(force=True)
+    username = data.get("username", "")
+    password = data.get("password", "")
+    if username != ADMIN_USERNAME or not check_password_hash(ADMIN_PASSWORD_HASH, password):
+        return jsonify({"error": "invalid username or password"}), 401
+
+    token = jwt.encode(
+        {
+            "sub": username,
+            "exp": datetime.now(timezone.utc) + timedelta(days=TOKEN_TTL_DAYS),
+        },
+        SECRET_KEY,
+        algorithm="HS256",
+    )
+    return jsonify({"token": token})
 
 
 # ---------- DB setup ----------
@@ -68,6 +113,7 @@ def init_db():
 # ---------- Transactions ----------
 
 @app.route("/api/transactions", methods=["GET"])
+@require_auth
 def list_transactions():
     db = get_db()
     cur = db.cursor()
@@ -76,6 +122,7 @@ def list_transactions():
 
 
 @app.route("/api/transactions", methods=["POST"])
+@require_auth
 def add_transaction():
     data = request.get_json(force=True)
     required = ["amount", "category", "type"]
@@ -97,6 +144,7 @@ def add_transaction():
 
 
 @app.route("/api/transactions/<int:tx_id>", methods=["DELETE"])
+@require_auth
 def delete_transaction(tx_id):
     db = get_db()
     cur = db.cursor()
@@ -106,6 +154,7 @@ def delete_transaction(tx_id):
 
 
 @app.route("/api/summary", methods=["GET"])
+@require_auth
 def summary():
     """Spend by category for the current month, plus totals."""
     db = get_db()
@@ -195,6 +244,7 @@ def fetch_price(symbol: str, asset_type: str):
 
 
 @app.route("/api/holdings", methods=["GET"])
+@require_auth
 def list_holdings():
     db = get_db()
     cur = db.cursor()
@@ -216,6 +266,7 @@ def list_holdings():
 
 
 @app.route("/api/holdings", methods=["POST"])
+@require_auth
 def add_holding():
     data = request.get_json(force=True)
     required = ["symbol", "asset_type", "quantity", "avg_buy_price"]
@@ -243,6 +294,7 @@ def add_holding():
 
 
 @app.route("/api/holdings/<int:holding_id>", methods=["DELETE"])
+@require_auth
 def delete_holding(holding_id):
     db = get_db()
     cur = db.cursor()
@@ -255,4 +307,4 @@ init_db()  # runs on import too, so gunicorn (used in production) creates the ta
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG") == "1")
