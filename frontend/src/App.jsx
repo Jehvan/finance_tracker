@@ -1,0 +1,315 @@
+import { useEffect, useState, useCallback } from "react";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+
+// In production (Render), set VITE_API_BASE to your backend's Render URL,
+// e.g. https://finance-tracker-api.onrender.com/api
+// Locally, it falls back to whatever host you loaded the page from,
+// so it works whether you open it via localhost or your LAN IP.
+const API_BASE =
+  import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:5000/api`;
+
+const COLORS = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA", "#F87171", "#4ADE80"];
+
+function Money({ value }) {
+  const n = Number(value ?? 0);
+  return <span>{n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
+}
+
+function SpendingTab() {
+  const [transactions, setTransactions] = useState([]);
+  const [summary, setSummary] = useState({ by_category: [], spent: 0, earned: 0 });
+  const [form, setForm] = useState({ amount: "", category: "", note: "", type: "expense" });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      const [txRes, sumRes] = await Promise.all([
+        fetch(`${API_BASE}/transactions`),
+        fetch(`${API_BASE}/summary`),
+      ]);
+      setTransactions(await txRes.json());
+      setSummary(await sumRes.json());
+    } catch (e) {
+      setError("Can't reach the server. Is the Flask backend running?");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleAdd(e) {
+    e.preventDefault();
+    if (!form.amount || !form.category) return;
+    await fetch(`${API_BASE}/transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    setForm({ amount: "", category: "", note: "", type: "expense" });
+    load();
+  }
+
+  async function handleDelete(id) {
+    await fetch(`${API_BASE}/transactions/${id}`, { method: "DELETE" });
+    load();
+  }
+
+  if (error) return <div className="empty-state">{error}</div>;
+
+  return (
+    <div className="tab-content">
+      <form className="quick-add" onSubmit={handleAdd}>
+        <input
+          type="number"
+          step="0.01"
+          placeholder="Amount"
+          value={form.amount}
+          onChange={(e) => setForm({ ...form, amount: e.target.value })}
+          required
+        />
+        <input
+          type="text"
+          placeholder="Category"
+          value={form.category}
+          onChange={(e) => setForm({ ...form, category: e.target.value })}
+          required
+        />
+        <input
+          type="text"
+          placeholder="Note (optional)"
+          value={form.note}
+          onChange={(e) => setForm({ ...form, note: e.target.value })}
+        />
+        <select
+          value={form.type}
+          onChange={(e) => setForm({ ...form, type: e.target.value })}
+        >
+          <option value="expense">Expense</option>
+          <option value="income">Income</option>
+        </select>
+        <button type="submit">Add</button>
+      </form>
+
+      <div className="summary-row">
+        <div className="stat-card">
+          <div className="stat-label">Spent this month</div>
+          <div className="stat-value spend"><Money value={summary.spent} /></div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Earned this month</div>
+          <div className="stat-value earn"><Money value={summary.earned} /></div>
+        </div>
+      </div>
+
+      {summary.by_category.length > 0 && (
+        <div className="chart-wrap">
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie
+                data={summary.by_category}
+                dataKey="total"
+                nameKey="category"
+                innerRadius={50}
+                outerRadius={80}
+                paddingAngle={2}
+              >
+                {summary.by_category.map((_, i) => (
+                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(v) => v.toFixed(2)} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <h3 className="section-title">Recent</h3>
+      {loading ? (
+        <div className="empty-state">Loading…</div>
+      ) : transactions.length === 0 ? (
+        <div className="empty-state">No transactions yet. Add your first one above.</div>
+      ) : (
+        <ul className="tx-list">
+          {transactions.map((tx) => (
+            <li key={tx.id} className="tx-row">
+              <div className="tx-main">
+                <span className={`tx-amount ${tx.type}`}>
+                  {tx.type === "expense" ? "-" : "+"}<Money value={tx.amount} />
+                </span>
+                <span className="tx-category">{tx.category}</span>
+                {tx.note && <span className="tx-note">{tx.note}</span>}
+              </div>
+              <div className="tx-side">
+                <span className="tx-date">{tx.date}</span>
+                <button className="delete-btn" onClick={() => handleDelete(tx.id)} aria-label="Delete">
+                  ✕
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function InvestingTab() {
+  const [holdings, setHoldings] = useState([]);
+  const [form, setForm] = useState({ symbol: "", asset_type: "crypto", quantity: "", avg_buy_price: "" });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      const res = await fetch(`${API_BASE}/holdings`);
+      setHoldings(await res.json());
+    } catch (e) {
+      setError("Can't reach the server. Is the Flask backend running?");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleAdd(e) {
+    e.preventDefault();
+    if (!form.symbol || !form.quantity || !form.avg_buy_price) return;
+    await fetch(`${API_BASE}/holdings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    setForm({ symbol: "", asset_type: "crypto", quantity: "", avg_buy_price: "" });
+    load();
+  }
+
+  async function handleDelete(id) {
+    await fetch(`${API_BASE}/holdings/${id}`, { method: "DELETE" });
+    load();
+  }
+
+  const totalValue = holdings.reduce((sum, h) => sum + (h.current_value || 0), 0);
+  const totalCost = holdings.reduce((sum, h) => sum + (h.cost_basis || 0), 0);
+  const totalGain = totalValue - totalCost;
+
+  if (error) return <div className="empty-state">{error}</div>;
+
+  return (
+    <div className="tab-content">
+      <form className="quick-add" onSubmit={handleAdd}>
+        <input
+          type="text"
+          placeholder="Symbol (e.g. bitcoin, AAPL)"
+          value={form.symbol}
+          onChange={(e) => setForm({ ...form, symbol: e.target.value })}
+          required
+        />
+        <select
+          value={form.asset_type}
+          onChange={(e) => setForm({ ...form, asset_type: e.target.value })}
+        >
+          <option value="crypto">Crypto</option>
+          <option value="stock">Stock</option>
+        </select>
+        <input
+          type="number"
+          step="any"
+          placeholder="Quantity"
+          value={form.quantity}
+          onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+          required
+        />
+        <input
+          type="number"
+          step="0.01"
+          placeholder="Avg buy price"
+          value={form.avg_buy_price}
+          onChange={(e) => setForm({ ...form, avg_buy_price: e.target.value })}
+          required
+        />
+        <button type="submit">Add</button>
+      </form>
+
+      <div className="summary-row">
+        <div className="stat-card">
+          <div className="stat-label">Portfolio value</div>
+          <div className="stat-value"><Money value={totalValue} /></div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Gain / loss</div>
+          <div className={`stat-value ${totalGain >= 0 ? "earn" : "spend"}`}>
+            {totalGain >= 0 ? "+" : ""}<Money value={totalGain} />
+          </div>
+        </div>
+      </div>
+
+      <h3 className="section-title">Holdings</h3>
+      {loading ? (
+        <div className="empty-state">Loading…</div>
+      ) : holdings.length === 0 ? (
+        <div className="empty-state">No holdings yet. Add crypto by its CoinGecko id (e.g. "bitcoin") or a stock ticker.</div>
+      ) : (
+        <ul className="tx-list">
+          {holdings.map((h) => (
+            <li key={h.id} className="tx-row">
+              <div className="tx-main">
+                <span className="tx-category">{h.symbol.toUpperCase()}</span>
+                <span className="tx-note">{h.quantity} @ avg <Money value={h.avg_buy_price} /></span>
+              </div>
+              <div className="tx-side">
+                <span className={`tx-amount ${h.gain_loss >= 0 ? "income" : "expense"}`}>
+                  {h.current_value != null ? <><Money value={h.current_value} /></> : "price unavailable"}
+                </span>
+                <button className="delete-btn" onClick={() => handleDelete(h.id)} aria-label="Delete">
+                  ✕
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export default function App() {
+  const [tab, setTab] = useState("spending");
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <h1>Finance Tracker</h1>
+        <nav className="tabs">
+          <button
+            className={tab === "spending" ? "active" : ""}
+            onClick={() => setTab("spending")}
+          >
+            Spending
+          </button>
+          <button
+            className={tab === "investing" ? "active" : ""}
+            onClick={() => setTab("investing")}
+          >
+            Investing
+          </button>
+        </nav>
+      </header>
+      <main>{tab === "spending" ? <SpendingTab /> : <InvestingTab />}</main>
+    </div>
+  );
+}

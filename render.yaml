@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: finance-tracker-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: ALPHAVANTAGE_API_KEY
+        sync: false   # set this manually in the Render dashboard
+      - key: DATABASE_URL
+        sync: false   # set this to your Supabase connection string
+
+  - type: web
+    name: finance-tracker-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE
+        value: https://finance-tracker-api.onrender.com/api
