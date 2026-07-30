@@ -2,6 +2,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 import jwt
 import psycopg2
@@ -194,15 +195,36 @@ def summary():
 
 # ---------- Holdings + prices ----------
 
+MARKET_TZ = ZoneInfo("America/New_York")
+MARKET_OPEN_HOUR, MARKET_OPEN_MINUTE = 9, 30  # NYSE/Nasdaq open, ET
+
+
+def last_market_open(at):
+    """The most recent market-open timestamp at or before `at` (ET)."""
+    open_today = at.replace(hour=MARKET_OPEN_HOUR, minute=MARKET_OPEN_MINUTE, second=0, microsecond=0)
+    return open_today if at >= open_today else open_today - timedelta(days=1)
+
+
 def fetch_price(symbol: str, asset_type: str):
-    """Fetch live price, using cache when fresh enough."""
+    """Fetch live price, using cache when fresh enough.
+
+    Crypto trades around the clock, so it uses a short rolling cache.
+    Stocks only need a new price once per trading day, so they're refreshed
+    at most once after each day's market open rather than every 15 minutes
+    (keeps well under Alpha Vantage's free-tier daily request limit).
+    """
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT * FROM price_cache WHERE symbol = %s", (symbol,))
     row = cur.fetchone()
     now = int(time.time())
-    if row and now - row["last_updated"] < PRICE_CACHE_SECONDS:
-        return row["price"]
+    if row:
+        if asset_type == "crypto":
+            fresh = now - row["last_updated"] < PRICE_CACHE_SECONDS
+        else:
+            fresh = row["last_updated"] >= last_market_open(datetime.now(MARKET_TZ)).timestamp()
+        if fresh:
+            return row["price"]
 
     price = None
     try:

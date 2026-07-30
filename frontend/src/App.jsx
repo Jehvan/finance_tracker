@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   PieChart,
   Pie,
@@ -127,6 +127,15 @@ function SpendingTab({ authFetch }) {
     load();
   }, [load]);
 
+  const categoryOptions = useMemo(
+    () => [...new Set(transactions.map((tx) => tx.category).filter(Boolean))].sort(),
+    [transactions]
+  );
+  const noteOptions = useMemo(
+    () => [...new Set(transactions.map((tx) => tx.note).filter(Boolean))].sort(),
+    [transactions]
+  );
+
   async function handleAdd(e) {
     e.preventDefault();
     if (!form.amount || !form.category) return;
@@ -146,6 +155,8 @@ function SpendingTab({ authFetch }) {
 
   if (error) return <div className="empty-state">{error}</div>;
 
+  const net = summary.earned - summary.spent;
+
   return (
     <div className="tab-content">
       <form className="quick-add" onSubmit={handleAdd}>
@@ -159,17 +170,29 @@ function SpendingTab({ authFetch }) {
         />
         <input
           type="text"
+          list="category-options"
           placeholder="Category"
           value={form.category}
           onChange={(e) => setForm({ ...form, category: e.target.value })}
           required
         />
+        <datalist id="category-options">
+          {categoryOptions.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
         <input
           type="text"
+          list="note-options"
           placeholder="Note (optional)"
           value={form.note}
           onChange={(e) => setForm({ ...form, note: e.target.value })}
         />
+        <datalist id="note-options">
+          {noteOptions.map((n) => (
+            <option key={n} value={n} />
+          ))}
+        </datalist>
         <select
           value={form.type}
           onChange={(e) => setForm({ ...form, type: e.target.value })}
@@ -188,6 +211,12 @@ function SpendingTab({ authFetch }) {
         <div className="stat-card">
           <div className="stat-label">Earned this month</div>
           <div className="stat-value earn"><Money value={summary.earned} /></div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Net</div>
+          <div className={`stat-value ${net >= 0 ? "earn" : "spend"}`}>
+            {net >= 0 ? "+" : ""}<Money value={net} />
+          </div>
         </div>
       </div>
 
