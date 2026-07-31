@@ -86,6 +86,43 @@ function Money({ value }) {
   return <span>{n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
 }
 
+// Custom dropdown instead of <datalist> — native datalist support/appearance
+// is inconsistent across browsers (notably Firefox and Safari/iOS), so this
+// renders its own suggestion list for a reliable experience everywhere.
+function TypeaheadInput({ value, onChange, options, placeholder, required }) {
+  const [open, setOpen] = useState(false);
+
+  const matches = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    const pool = q ? options.filter((o) => o.toLowerCase().includes(q) && o !== value) : options;
+    return pool.slice(0, 8);
+  }, [value, options]);
+
+  return (
+    <div className="typeahead">
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 100)}
+        required={required}
+        autoComplete="off"
+      />
+      {open && matches.length > 0 && (
+        <ul className="typeahead-list">
+          {matches.map((m) => (
+            <li key={m} onMouseDown={() => onChange(m)}>
+              {m}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function makeAuthFetch(token, onUnauthorized) {
   return async function authFetch(url, options = {}) {
     const res = await fetch(url, {
@@ -168,31 +205,19 @@ function SpendingTab({ authFetch }) {
           onChange={(e) => setForm({ ...form, amount: e.target.value })}
           required
         />
-        <input
-          type="text"
-          list="category-options"
+        <TypeaheadInput
           placeholder="Category"
           value={form.category}
-          onChange={(e) => setForm({ ...form, category: e.target.value })}
+          onChange={(v) => setForm({ ...form, category: v })}
+          options={categoryOptions}
           required
         />
-        <datalist id="category-options">
-          {categoryOptions.map((c) => (
-            <option key={c} value={c} />
-          ))}
-        </datalist>
-        <input
-          type="text"
-          list="note-options"
+        <TypeaheadInput
           placeholder="Note (optional)"
           value={form.note}
-          onChange={(e) => setForm({ ...form, note: e.target.value })}
+          onChange={(v) => setForm({ ...form, note: v })}
+          options={noteOptions}
         />
-        <datalist id="note-options">
-          {noteOptions.map((n) => (
-            <option key={n} value={n} />
-          ))}
-        </datalist>
         <select
           value={form.type}
           onChange={(e) => setForm({ ...form, type: e.target.value })}

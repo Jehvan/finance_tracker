@@ -77,8 +77,14 @@ body {
 }
 
 .quick-add input,
-.quick-add select {
+.quick-add select,
+.quick-add .typeahead {
   flex: 1 1 45%;
+  min-width: 0;
+}
+
+.quick-add input,
+.quick-add select {
   background: var(--card);
   border: 1px solid var(--border);
   color: var(--text);
@@ -86,6 +92,48 @@ body {
   border-radius: 8px;
   font-size: 0.9rem;
   min-width: 0;
+}
+
+.typeahead {
+  position: relative;
+}
+
+.typeahead input {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.typeahead-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.typeahead-list li {
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.typeahead-list li:hover {
+  background: var(--border);
 }
 
 .quick-add button {
