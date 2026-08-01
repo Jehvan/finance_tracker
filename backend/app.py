@@ -118,7 +118,14 @@ def init_db():
 def list_transactions():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT * FROM transactions ORDER BY date DESC, id DESC")
+    month = request.args.get("month")
+    if month:
+        cur.execute(
+            "SELECT * FROM transactions WHERE date LIKE %s ORDER BY date DESC, id DESC",
+            (f"{month}%",),
+        )
+    else:
+        cur.execute("SELECT * FROM transactions ORDER BY date DESC, id DESC")
     return jsonify(cur.fetchall())
 
 
@@ -157,31 +164,52 @@ def delete_transaction(tx_id):
 @app.route("/api/summary", methods=["GET"])
 @require_auth
 def summary():
-    """Spend by category for the current month, plus totals."""
+    """Spend by category, plus totals — for one month, or all time."""
     db = get_db()
     cur = db.cursor()
-    month_prefix = datetime.now().strftime("%Y-%m")
-    cur.execute(
-        """
-        SELECT category, SUM(amount) as total
-        FROM transactions
-        WHERE type = 'expense' AND date LIKE %s
-        GROUP BY category
-        ORDER BY total DESC
-        """,
-        (f"{month_prefix}%",),
-    )
-    by_category = cur.fetchall()
+    all_time = request.args.get("range") == "all"
+    month = request.args.get("month") or datetime.now().strftime("%Y-%m")
 
-    cur.execute(
-        """
-        SELECT
-            COALESCE(SUM(CASE WHEN type = 'expense' AND date LIKE %s THEN amount END), 0) as spent,
-            COALESCE(SUM(CASE WHEN type = 'income' AND date LIKE %s THEN amount END), 0) as earned
-        FROM transactions
-        """,
-        (f"{month_prefix}%", f"{month_prefix}%"),
-    )
+    if all_time:
+        cur.execute(
+            """
+            SELECT category, SUM(amount) as total
+            FROM transactions
+            WHERE type = 'expense'
+            GROUP BY category
+            ORDER BY total DESC
+            """
+        )
+        by_category = cur.fetchall()
+        cur.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN type = 'expense' THEN amount END), 0) as spent,
+                COALESCE(SUM(CASE WHEN type = 'income' THEN amount END), 0) as earned
+            FROM transactions
+            """
+        )
+    else:
+        cur.execute(
+            """
+            SELECT category, SUM(amount) as total
+            FROM transactions
+            WHERE type = 'expense' AND date LIKE %s
+            GROUP BY category
+            ORDER BY total DESC
+            """,
+            (f"{month}%",),
+        )
+        by_category = cur.fetchall()
+        cur.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN type = 'expense' AND date LIKE %s THEN amount END), 0) as spent,
+                COALESCE(SUM(CASE WHEN type = 'income' AND date LIKE %s THEN amount END), 0) as earned
+            FROM transactions
+            """,
+            (f"{month}%", f"{month}%"),
+        )
     totals = cur.fetchone()
 
     return jsonify(
@@ -189,6 +217,8 @@ def summary():
             "by_category": by_category,
             "spent": totals["spent"],
             "earned": totals["earned"],
+            "month": month,
+            "range": "all" if all_time else "month",
         }
     )
 

@@ -137,19 +137,38 @@ function makeAuthFetch(token, onUnauthorized) {
   };
 }
 
+function currentMonthString() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function shiftMonth(month, delta) {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonth(month) {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
 function SpendingTab({ authFetch }) {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({ by_category: [], spent: 0, earned: 0 });
   const [form, setForm] = useState({ amount: "", category: "", note: "", type: "expense" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [viewMode, setViewMode] = useState("month"); // "month" | "all"
+  const [month, setMonth] = useState(currentMonthString);
 
   const load = useCallback(async () => {
     try {
       setError(null);
+      const txQuery = viewMode === "all" ? "" : `?month=${month}`;
+      const sumQuery = viewMode === "all" ? "?range=all" : `?month=${month}`;
       const [txRes, sumRes] = await Promise.all([
-        authFetch(`${API_BASE}/transactions`),
-        authFetch(`${API_BASE}/summary`),
+        authFetch(`${API_BASE}/transactions${txQuery}`),
+        authFetch(`${API_BASE}/summary${sumQuery}`),
       ]);
       setTransactions(await txRes.json());
       setSummary(await sumRes.json());
@@ -158,7 +177,7 @@ function SpendingTab({ authFetch }) {
     } finally {
       setLoading(false);
     }
-  }, [authFetch]);
+  }, [authFetch, viewMode, month]);
 
   useEffect(() => {
     load();
@@ -228,13 +247,40 @@ function SpendingTab({ authFetch }) {
         <button type="submit">Add</button>
       </form>
 
+      <div className="range-bar">
+        {viewMode === "month" ? (
+          <>
+            <button className="range-nav" onClick={() => setMonth((m) => shiftMonth(m, -1))} aria-label="Previous month">
+              ‹
+            </button>
+            <span className="range-label">{formatMonth(month)}</span>
+            <button
+              className="range-nav"
+              onClick={() => setMonth((m) => shiftMonth(m, 1))}
+              disabled={month >= currentMonthString()}
+              aria-label="Next month"
+            >
+              ›
+            </button>
+          </>
+        ) : (
+          <span className="range-label">All time</span>
+        )}
+        <button
+          className="range-toggle"
+          onClick={() => setViewMode((v) => (v === "month" ? "all" : "month"))}
+        >
+          {viewMode === "month" ? "View all time" : "View by month"}
+        </button>
+      </div>
+
       <div className="summary-row">
         <div className="stat-card">
-          <div className="stat-label">Spent this month</div>
+          <div className="stat-label">{viewMode === "all" ? "Spent" : "Spent this month"}</div>
           <div className="stat-value spend"><Money value={summary.spent} /></div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Earned this month</div>
+          <div className="stat-label">{viewMode === "all" ? "Earned" : "Earned this month"}</div>
           <div className="stat-value earn"><Money value={summary.earned} /></div>
         </div>
         <div className="stat-card">
@@ -267,11 +313,13 @@ function SpendingTab({ authFetch }) {
         </div>
       )}
 
-      <h3 className="section-title">Recent</h3>
+      <h3 className="section-title">{viewMode === "all" ? "All transactions" : "Transactions"}</h3>
       {loading ? (
         <div className="empty-state">Loading…</div>
       ) : transactions.length === 0 ? (
-        <div className="empty-state">No transactions yet. Add your first one above.</div>
+        <div className="empty-state">
+          {viewMode === "all" ? "No transactions yet." : "No transactions this month."}
+        </div>
       ) : (
         <ul className="tx-list">
           {transactions.map((tx) => (
