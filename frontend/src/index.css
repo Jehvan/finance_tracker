@@ -197,6 +197,31 @@ body {
   margin-bottom: 1rem;
 }
 
+.category-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.category-filter .section-title {
+  margin: 0;
+}
+
+.category-filter select {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.category-total {
+  margin-bottom: 1.25rem;
+}
+
 .stat-card {
   flex: 1;
   background: var(--card);

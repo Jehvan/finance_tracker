@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import {
-  PieChart,
-  Pie,
   Cell,
   Tooltip,
   ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
 } from "recharts";
 
 // In production (Render), set VITE_API_BASE to your backend's Render URL,
@@ -160,6 +163,7 @@ function SpendingTab({ authFetch }) {
   const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState("month"); // "month" | "all"
   const [month, setMonth] = useState(currentMonthString);
+  const [categoryFilter, setCategoryFilter] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -182,6 +186,12 @@ function SpendingTab({ authFetch }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (categoryFilter && !summary.by_category.some((c) => c.category === categoryFilter)) {
+      setCategoryFilter("");
+    }
+  }, [summary, categoryFilter]);
 
   const categoryOptions = useMemo(
     () => [...new Set(transactions.map((tx) => tx.category).filter(Boolean))].sort(),
@@ -292,25 +302,49 @@ function SpendingTab({ authFetch }) {
       </div>
 
       {summary.by_category.length > 0 && (
-        <div className="chart-wrap">
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie
-                data={summary.by_category}
-                dataKey="total"
-                nameKey="category"
-                innerRadius={50}
-                outerRadius={80}
-                paddingAngle={2}
-              >
-                {summary.by_category.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(v) => v.toFixed(2)} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <div className="category-filter">
+            <span className="section-title">By category</span>
+            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+              <option value="">All categories</option>
+              {summary.by_category.map((c) => (
+                <option key={c.category} value={c.category}>
+                  {c.category}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {categoryFilter ? (
+            <div className="stat-card category-total">
+              <div className="stat-label">Spent on {categoryFilter}</div>
+              <div className="stat-value spend">
+                <Money
+                  value={summary.by_category.find((c) => c.category === categoryFilter)?.total ?? 0}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="chart-wrap">
+              <ResponsiveContainer width="100%" height={Math.max(160, summary.by_category.length * 40)}>
+                <BarChart data={summary.by_category} layout="vertical" margin={{ top: 8, right: 24, bottom: 8, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: "var(--muted)", fontSize: 11 }} />
+                  <YAxis type="category" dataKey="category" width={90} tick={{ fill: "var(--text)", fontSize: 12 }} />
+                  <Tooltip
+                    formatter={(v) => v.toFixed(2)}
+                    contentStyle={{ background: "var(--card)", border: "1px solid var(--border)" }}
+                  />
+                  <Bar dataKey="total" radius={[0, 4, 4, 0]}>
+                    {summary.by_category.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </>
       )}
 
       <h3 className="section-title">{viewMode === "all" ? "All transactions" : "Transactions"}</h3>
