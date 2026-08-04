@@ -26,7 +26,7 @@ body {
   max-width: 480px;
   margin: 0 auto;
   min-height: 100vh;
-  padding-bottom: 2rem;
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom));
 }
 
 .app-header {
@@ -96,7 +96,8 @@ body {
 }
 
 .typeahead {
-  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .typeahead input {
@@ -109,14 +110,11 @@ body {
   font-size: 0.9rem;
 }
 
+/* Rendered in normal document flow (not absolutely positioned) so opening
+   it pushes later form fields/buttons down instead of covering them. */
 .typeahead-list {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 20;
   list-style: none;
-  margin: 0;
+  margin: 4px 0 0;
   padding: 0.25rem;
   background: var(--card);
   border: 1px solid var(--border);
@@ -127,13 +125,14 @@ body {
 }
 
 .typeahead-list li {
-  padding: 0.5rem 0.6rem;
+  padding: 0.6rem;
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.9rem;
 }
 
-.typeahead-list li:hover {
+.typeahead-list li:hover,
+.typeahead-list li.active {
   background: var(--border);
 }
 
@@ -162,8 +161,8 @@ body {
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 8px;
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
@@ -236,6 +235,7 @@ body {
   font-size: 0.75rem;
   color: var(--muted);
   margin-bottom: 0.25rem;
+  overflow-wrap: anywhere;
 }
 
 .stat-value {
@@ -311,11 +311,13 @@ body {
 
 .tx-category {
   font-size: 0.95rem;
+  overflow-wrap: anywhere;
 }
 
 .tx-note {
   font-size: 0.8rem;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .tx-side {
@@ -336,7 +338,12 @@ body {
   color: var(--muted);
   cursor: pointer;
   font-size: 0.9rem;
-  padding: 0.2rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .delete-btn:hover {
@@ -348,4 +355,21 @@ body {
   text-align: center;
   padding: 2rem 1rem;
   font-size: 0.9rem;
+}
+
+.retry-btn {
+  margin-top: 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.form-error {
+  color: var(--red);
+  font-size: 0.85rem;
+  margin: -0.75rem 0 1rem;
 }
