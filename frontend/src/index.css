@@ -231,6 +231,35 @@ body {
   padding: 0.85rem 1rem;
 }
 
+.category-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+  font-size: 0.9rem;
+}
+
+.category-table td {
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.category-table tr:first-child td {
+  border-top: none;
+}
+
+.category-table-amount {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--green);
+  white-space: nowrap;
+}
+
 .stat-label {
   font-size: 0.75rem;
   color: var(--muted);

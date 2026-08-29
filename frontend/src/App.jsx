@@ -222,7 +222,7 @@ async function errorMessageFrom(res, fallback) {
 
 function SpendingTab({ authFetch }) {
   const [transactions, setTransactions] = useState([]);
-  const [summary, setSummary] = useState({ by_category: [], spent: 0, earned: 0 });
+  const [summary, setSummary] = useState({ by_category: [], income_by_category: [], spent: 0, earned: 0 });
   const [allCategories, setAllCategories] = useState([]);
   const [allNotes, setAllNotes] = useState([]);
   const [form, setForm] = useState({ amount: "", category: "", note: "", type: "expense" });
@@ -460,6 +460,24 @@ function SpendingTab({ authFetch }) {
                   </ResponsiveContainer>
                 </div>
               )}
+            </>
+          )}
+
+          {summary.income_by_category?.length > 0 && (
+            <>
+              <h3 className="section-title">Income by category</h3>
+              <table className="category-table">
+                <tbody>
+                  {summary.income_by_category.map((c) => (
+                    <tr key={c.category}>
+                      <td>{c.category}</td>
+                      <td className="category-table-amount">
+                        +<Money value={c.total} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </>
           )}
 

@@ -248,7 +248,7 @@ def delete_transaction(tx_id):
 @app.route("/api/summary", methods=["GET"])
 @require_auth
 def summary():
-    """Spend by category, plus totals — for one month, or all time."""
+    """Spend and income by category, plus totals — for one month, or all time."""
     month, err = valid_month_param()
     if err:
         return err
@@ -257,17 +257,35 @@ def summary():
     all_time = request.args.get("range") == "all"
     month = month or datetime.now().strftime("%Y-%m")
 
+    def by_category_for(tx_type):
+        if all_time:
+            cur.execute(
+                """
+                SELECT category, SUM(amount) as total
+                FROM transactions
+                WHERE type = %s
+                GROUP BY category
+                ORDER BY total DESC
+                """,
+                (tx_type,),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT category, SUM(amount) as total
+                FROM transactions
+                WHERE type = %s AND date LIKE %s
+                GROUP BY category
+                ORDER BY total DESC
+                """,
+                (tx_type, f"{month}%"),
+            )
+        return cur.fetchall()
+
+    by_category = by_category_for("expense")
+    income_by_category = by_category_for("income")
+
     if all_time:
-        cur.execute(
-            """
-            SELECT category, SUM(amount) as total
-            FROM transactions
-            WHERE type = 'expense'
-            GROUP BY category
-            ORDER BY total DESC
-            """
-        )
-        by_category = cur.fetchall()
         cur.execute(
             """
             SELECT
@@ -277,17 +295,6 @@ def summary():
             """
         )
     else:
-        cur.execute(
-            """
-            SELECT category, SUM(amount) as total
-            FROM transactions
-            WHERE type = 'expense' AND date LIKE %s
-            GROUP BY category
-            ORDER BY total DESC
-            """,
-            (f"{month}%",),
-        )
-        by_category = cur.fetchall()
         cur.execute(
             """
             SELECT
@@ -302,6 +309,7 @@ def summary():
     return jsonify(
         {
             "by_category": by_category,
+            "income_by_category": income_by_category,
             "spent": totals["spent"],
             "earned": totals["earned"],
             "month": month,
