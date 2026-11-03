@@ -22,6 +22,11 @@ const COLORS = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA", "#F87171"
 
 const TOKEN_KEY = "finance_tracker_token";
 
+// The denar is pegged to the euro by the National Bank of the Republic of
+// North Macedonia at a fixed rate (has held ~61.5 since 1997), so a static
+// conversion is appropriate here rather than fetching a live FX rate.
+const EUR_TO_MKD_RATE = 61.5;
+
 // All date/month logic uses the device's local time, not UTC — otherwise a
 // transaction added in the evening (US timezones) or just after midnight
 // (timezones ahead of UTC) can land on the wrong day/month.
@@ -225,7 +230,7 @@ function SpendingTab({ authFetch }) {
   const [summary, setSummary] = useState({ by_category: [], income_by_category: [], spent: 0, earned: 0 });
   const [allCategories, setAllCategories] = useState([]);
   const [allNotes, setAllNotes] = useState([]);
-  const [form, setForm] = useState({ amount: "", category: "", note: "", type: "expense" });
+  const [form, setForm] = useState({ amount: "", currency: "MKD", category: "", note: "", type: "expense" });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [formError, setFormError] = useState(null);
@@ -290,17 +295,25 @@ function SpendingTab({ authFetch }) {
     e.preventDefault();
     if (!form.amount || !form.category) return;
     setFormError(null);
+    const amountInMkd =
+      form.currency === "EUR" ? Number(form.amount) * EUR_TO_MKD_RATE : Number(form.amount);
     try {
       const res = await authFetch(`${API_BASE}/transactions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, date: localDateString() }),
+        body: JSON.stringify({
+          amount: amountInMkd,
+          category: form.category,
+          note: form.note,
+          type: form.type,
+          date: localDateString(),
+        }),
       });
       if (!res.ok) {
         setFormError(await errorMessageFrom(res, "Couldn't save that transaction."));
         return;
       }
-      setForm({ amount: "", category: "", note: "", type: "expense" });
+      setForm((f) => ({ amount: "", currency: f.currency, category: "", note: "", type: "expense" }));
       load();
       loadCategories();
     } catch (e) {
@@ -327,15 +340,30 @@ function SpendingTab({ authFetch }) {
   return (
     <div className="tab-content">
       <form className="quick-add" onSubmit={handleAdd}>
-        <input
-          type="number"
-          step="0.01"
-          min="0.01"
-          placeholder="Amount"
-          value={form.amount}
-          onChange={(e) => setForm({ ...form, amount: e.target.value })}
-          required
-        />
+        <div className="amount-field">
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            placeholder="Amount"
+            value={form.amount}
+            onChange={(e) => setForm({ ...form, amount: e.target.value })}
+            required
+          />
+          <select
+            value={form.currency}
+            onChange={(e) => setForm({ ...form, currency: e.target.value })}
+            aria-label="Currency"
+          >
+            <option value="MKD">MKD</option>
+            <option value="EUR">EUR</option>
+          </select>
+        </div>
+        {form.currency === "EUR" && form.amount && (
+          <div className="amount-conversion">
+            ≈ <Money value={Number(form.amount) * EUR_TO_MKD_RATE} /> MKD
+          </div>
+        )}
         <TypeaheadInput
           id="tx-category"
           placeholder="Category"

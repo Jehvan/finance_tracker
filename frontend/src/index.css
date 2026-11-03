@@ -79,7 +79,8 @@ body {
 
 .quick-add input,
 .quick-add select,
-.quick-add .typeahead {
+.quick-add .typeahead,
+.quick-add .amount-field {
   flex: 1 1 45%;
   min-width: 0;
 }
@@ -93,6 +94,30 @@ body {
   border-radius: 8px;
   font-size: 0.9rem;
   min-width: 0;
+}
+
+.amount-field {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.amount-field input {
+  flex: 1;
+  min-width: 0;
+}
+
+.amount-field select {
+  flex: 0 0 auto;
+  width: auto;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.amount-conversion {
+  flex: 1 1 100%;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: -0.3rem;
 }
 
 .typeahead {
