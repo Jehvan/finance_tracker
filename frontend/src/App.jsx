@@ -18,6 +18,8 @@ import {
   makeAuthFetch,
 } from "./shared.jsx";
 import SubscriptionsTab from "./Subscriptions.jsx";
+import DueBanner from "./DueBanner.jsx";
+import { useReminders } from "./reminders.js";
 
 const COLORS = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA", "#F87171", "#4ADE80"];
 
@@ -183,7 +185,7 @@ function TypeaheadInput({ id, value, onChange, options, placeholder, required })
   );
 }
 
-function SpendingTab({ authFetch }) {
+function SpendingTab({ authFetch, refreshKey }) {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({ by_category: [], income_by_category: [], spent: 0, earned: 0 });
   const [allCategories, setAllCategories] = useState([]);
@@ -220,7 +222,7 @@ function SpendingTab({ authFetch }) {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [authFetch, viewMode, month]);
+  }, [authFetch, viewMode, month, refreshKey]); // refreshKey: reload after a bill is marked paid elsewhere
 
   const loadCategories = useCallback(async () => {
     try {
@@ -682,6 +684,8 @@ export default function App() {
 
   // Stable per token, so re-rendering App doesn't make every tab refetch.
   const authFetch = useMemo(() => (token ? makeAuthFetch(token, handleLogout) : null), [token, handleLogout]);
+  const { reminders, refresh: refreshReminders } = useReminders(authFetch);
+  const [spendingVersion, setSpendingVersion] = useState(0);
 
   if (!token) return <LoginForm onLogin={handleLogin} />;
 
@@ -696,18 +700,46 @@ export default function App() {
       <header className="app-header">
         <h1>Finance Tracker</h1>
         <nav className="tabs">
-          {tabs.map(([id, label]) => (
-            <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
-              {label}
-            </button>
-          ))}
+          {tabs.map(([id, label]) => {
+            const badge = id === "bills" ? reminders.needsAttention.length : 0;
+            return (
+              <button
+                key={id}
+                className={tab === id ? "active" : ""}
+                onClick={() => setTab(id)}
+                aria-label={badge ? `${label}, ${badge} need${badge === 1 ? "s" : ""} attention` : undefined}
+              >
+                {label}
+                {badge > 0 && (
+                  <span className={`nav-badge ${reminders.overdueCount > 0 ? "overdue" : ""}`} aria-hidden="true">
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
           <button onClick={handleLogout}>Log out</button>
         </nav>
       </header>
       <main>
-        {tab === "spending" && <SpendingTab authFetch={authFetch} />}
+        {tab === "spending" && (
+          <>
+            <div className="banner-wrap">
+              <DueBanner
+                authFetch={authFetch}
+                items={reminders.dueThisWeek}
+                onPaid={() => {
+                  refreshReminders();
+                  setSpendingVersion((v) => v + 1);
+                }}
+                onOpenBills={() => setTab("bills")}
+              />
+            </div>
+            <SpendingTab authFetch={authFetch} refreshKey={spendingVersion} />
+          </>
+        )}
         {tab === "investing" && <InvestingTab authFetch={authFetch} />}
-        {tab === "bills" && <SubscriptionsTab authFetch={authFetch} />}
+        {tab === "bills" && <SubscriptionsTab authFetch={authFetch} onChanged={refreshReminders} />}
       </main>
     </div>
   );
