@@ -10,7 +10,9 @@ A personal spending + investing tracker. Flask + Postgres (Supabase) backend, Re
    Use the pooled "Transaction" connection string if offered — it's better suited to a
    web app that opens/closes connections per request.
 3. That's it — the app creates its own tables automatically the first time it runs
-   (see `init_db()` in `app.py`).
+   (see `init_db()` in `app.py`), and applies every file in `backend/migrations/` on
+   startup. Those files are idempotent, so you can also paste them into the Supabase
+   SQL editor yourself.
 
 ## 2. Run the backend locally
 
@@ -28,6 +30,21 @@ This starts the Flask API on `http://0.0.0.0:5000`.
 Optional: for live stock prices, get a free key from https://www.alphavantage.co/support/#api-key
 and set `ALPHAVANTAGE_API_KEY` the same way. Crypto prices (via CoinGecko) work with no key
 needed — use CoinGecko's *id* as the symbol, e.g. `bitcoin`, not the ticker `BTC`.
+
+Optional: `APP_TIMEZONE` (default `Europe/Skopje`) decides what "today" means for bill
+due dates and overdue checks.
+
+### Running the backend tests
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest                                   # pure-logic tests only
+TEST_DATABASE_URL="postgresql://postgres@localhost:5432/finance_test" pytest   # + API tests
+```
+
+API tests **truncate tables**, so `TEST_DATABASE_URL` must be a throwaway local database,
+never Supabase.
 
 ## 3. Run the frontend locally
 
