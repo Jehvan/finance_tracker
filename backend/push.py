@@ -69,10 +69,21 @@ def clean_subscription(data):
 
 def load_vapid_key(private_key_b64):
     """The server's VAPID key from VAPID_PRIVATE_KEY (base64url raw 32-byte
-    P-256 private key), or None when push isn't configured."""
-    if not private_key_b64:
+    P-256 private key), or None when push isn't configured.
+
+    Raises ValueError for a malformed value (e.g. the public key pasted by mistake)."""
+    if not private_key_b64 or not private_key_b64.strip():
         return None
-    return Vapid02.from_string(private_key_b64)
+    value = private_key_b64.strip()
+    if not B64URL_RE.match(value):
+        raise ValueError("VAPID_PRIVATE_KEY must be base64url")
+    raw = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+    if len(raw) != 32:
+        raise ValueError(f"VAPID_PRIVATE_KEY must decode to 32 bytes, got {len(raw)}")
+    try:
+        return Vapid02.from_string(value)
+    except Exception as e:  # not a valid P-256 private key
+        raise ValueError(f"VAPID_PRIVATE_KEY is not a valid P-256 key: {type(e).__name__}")
 
 
 def public_key_b64(vapid):

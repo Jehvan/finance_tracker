@@ -1,4 +1,5 @@
 import hmac
+import logging
 import math
 import os
 import re
@@ -46,7 +47,12 @@ APP_TZ = ZoneInfo(os.environ.get("APP_TIMEZONE", "Europe/Skopje"))
 # Web push (bill reminders). Off unless VAPID_PRIVATE_KEY is set; generate one
 # with `python push.py`. The daily run is triggered by .github/workflows/
 # bill-reminders.yml, authenticated with PUSH_CRON_SECRET (unset = disabled).
-VAPID = push.load_vapid_key(os.environ.get("VAPID_PRIVATE_KEY"))
+try:
+    VAPID = push.load_vapid_key(os.environ.get("VAPID_PRIVATE_KEY"))
+except ValueError as e:
+    # A bad key must not take the whole API down; push just stays off.
+    logging.getLogger(__name__).error("Push notifications disabled: %s", e)
+    VAPID = None
 VAPID_PUBLIC_KEY = push.public_key_b64(VAPID) if VAPID else None
 # Contact claim push services require; the site URL avoids publishing an email.
 VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT") or os.environ["FRONTEND_ORIGIN"]

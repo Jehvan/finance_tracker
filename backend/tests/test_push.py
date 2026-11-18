@@ -261,3 +261,35 @@ def test_send_does_not_follow_redirects(monkeypatch):
                     "p256dh": base64.urlsafe_b64encode(client_key).rstrip(b"=").decode(), "auth": b64(16)}
     assert push.send_notification(subscription, {"title": "t"}, vapid, "https://example.com") == "failed"
     assert seen["max_redirects"] == 0
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_unset_vapid_key_means_push_off(value):
+    assert push.load_vapid_key(value) is None
+
+
+@pytest.mark.parametrize("value", [
+    "not base64!",
+    b64(65),                 # the public key pasted by mistake
+    b64(16),                 # too short
+    base64.urlsafe_b64encode(b"\x00" * 32).rstrip(b"=").decode(),  # 0 is not a valid P-256 key
+])
+def test_malformed_vapid_key_is_rejected_cleanly(value):
+    with pytest.raises(ValueError):
+        push.load_vapid_key(value)
+
+
+def test_generated_and_dotnet_style_keys_load():
+    k = push.generate_private_key_b64()
+    assert len(k) == 43 and push.load_vapid_key(k) is not None
+    assert push.load_vapid_key("  " + k + "\n") is not None  # stray whitespace from copy-paste
+
+
+def test_api_starts_with_a_bad_key(app_module):  # app_module: sets the env the import needs
+    """A malformed VAPID_PRIVATE_KEY disables push instead of crashing the API at import."""
+    import subprocess, sys
+    env = {**os.environ, "VAPID_PRIVATE_KEY": b64(65)}
+    code = "import app; print('ok', app.VAPID is None)"
+    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__)))
+    assert out.stdout.strip().endswith("ok True"), out.stderr[-500:]
+    assert "Push notifications disabled" in out.stderr
