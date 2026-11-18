@@ -1115,3 +1115,59 @@ select {
   margin: 0.4rem 0;
   padding: 0;
 }
+
+/* ---------- Push reminder settings (Bills tab) ---------- */
+
+.push-card {
+  margin: 0 0 1.75rem;
+  padding: 1rem 1.1rem;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+}
+
+.push-card-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.push-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.8rem;
+}
+
+.push-card-actions button {
+  min-height: var(--tap);
+  padding: 0 1rem;
+  border-radius: 999px;
+  border: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.push-card-actions .bill-secondary {
+  background: var(--card-raised);
+  color: var(--text);
+}
+
+.push-card-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.push-card-note,
+.push-card-error {
+  margin: 0.6rem 0 0;
+  font-size: 0.9rem;
+}
+
+.push-card-note {
+  color: var(--gold);
+}
+
+.push-card-error {
+  color: var(--rose);
+}

@@ -28,13 +28,18 @@ API tests TRUNCATE tables: `TEST_DATABASE_URL` must be a throwaway local DB, nev
   Bearer` still works for tests/non-browser clients. Login is rate limited via `login_failures`.
 - `backend/recurring.py`: pure Subscriptions & Bills logic (due-date advancing, cost
   normalization, validation). No Flask or DB imports, so keep new logic there.
+- `backend/push.py`: web push (subscription validation with a push-service host allowlist, VAPID,
+  sending without redirects). Routes `/api/push/*` in app.py; `/api/push/run-daily` is called by
+  `.github/workflows/bill-reminders.yml` with `X-Cron-Secret` (404 if `PUSH_CRON_SECRET` unset).
+  Push is off unless `VAPID_PRIVATE_KEY` is set. Digest text lives in `rc.build_digest()`.
 - `backend/migrations/NNN_name.sql`: schema changes. Must be idempotent (`IF NOT EXISTS`);
   `init_db()` applies all of them on every startup, and they can be pasted into Supabase.
 - `frontend/src/App.jsx`: tabs (Spending, Investing, Bills; bottom tab bar) and the login. Visual
   design is the aubergine/gold/rose theme in `index.css` (tokens on `:root`; gold = money in /
   primary action, rose = money out / overdue; Unbounded for figures, Golos Text for UI). `shared.jsx` holds
   `API_BASE`, `authFetch`, `Money` and date helpers; `recurringApi.js` holds bill API calls;
-  `reminders.js` holds reminder logic (phase 2 web-push plan is documented there).
+  `reminders.js` holds in-app reminder logic; `push.js` + `PushSettings.jsx` turn device
+  notifications on/off; `src/sw.js` is the service worker (vite-plugin-pwa `injectManifest`).
 
 ## Gotchas
 
@@ -57,6 +62,11 @@ API tests TRUNCATE tables: `TEST_DATABASE_URL` must be a throwaway local DB, nev
   ignores any absolute `VITE_API_BASE`.
   Never store the token in localStorage. Cookie-authenticated writes need the
   `X-Requested-With` header (`CSRF_HEADERS` in shared.jsx); the backend returns 403 without it.
+- Push notifications must never include amounts (they show on the lock screen), and the server
+  may only POST to allowlisted push-service hosts (SSRF). Daily runs claim each device for the
+  day before sending, so repeats don't double-send.
+- Playwright's default headless shell reports notifications as "denied"; use
+  `chromium.launch({ channel: "chromium" })` to test push UI.
 - The frontend never talks to Supabase and must never receive Supabase credentials
   (`VITE_*` vars end up in the public bundle).
 

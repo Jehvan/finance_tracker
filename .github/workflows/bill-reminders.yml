@@ -1,0 +1,40 @@
+# Once a day, asks the API to send bill-reminder push notifications.
+# Render's free plan has no background workers, so the schedule lives here.
+# GitHub may start scheduled runs late (sometimes by an hour or more), which is
+# fine for a daily reminder; the API makes repeated runs on the same day harmless.
+#
+# Setup: add a repository secret PUSH_CRON_SECRET (Settings > Secrets and
+# variables > Actions) with the same value as the API's PUSH_CRON_SECRET env var.
+# Note: GitHub pauses scheduled workflows after 60 days without repo activity;
+# re-enable it from the Actions tab if reminders stop.
+name: Bill reminders
+
+on:
+  schedule:
+    - cron: "23 6 * * *"   # 06:23 UTC = 07:23 (winter) / 08:23 (summer) in Skopje
+  workflow_dispatch: {}    # "Run workflow" button for testing
+
+permissions: {}
+
+concurrency:
+  group: bill-reminders
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Send today's reminders
+        env:
+          API_URL: https://finance-tracker-api-aait.onrender.com
+          CRON_SECRET: ${{ secrets.PUSH_CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Repository secret PUSH_CRON_SECRET is not set"; exit 1
+          fi
+          # The free Render instance may be asleep; retries cover its cold start.
+          curl --fail-with-body --silent --show-error \
+            --retry 6 --retry-delay 20 --retry-all-errors --max-time 90 \
+            -X POST "$API_URL/api/push/run-daily" \
+            -H "X-Cron-Secret: $CRON_SECRET"

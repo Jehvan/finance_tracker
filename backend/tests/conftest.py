@@ -18,6 +18,7 @@ from werkzeug.security import generate_password_hash
 
 TEST_DB = os.environ.get("TEST_DATABASE_URL")
 TEST_SECRET = "test-only-signing-key-0123456789abcdef-not-a-real-secret"
+CRON_SECRET = "test-only-cron-secret"
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "test-only-password"
 
@@ -34,7 +35,11 @@ def app_module():
         ADMIN_USERNAME=ADMIN_USERNAME,
         ADMIN_PASSWORD_HASH=generate_password_hash(ADMIN_PASSWORD),
         FRONTEND_ORIGIN="http://localhost:5173",
+        PUSH_CRON_SECRET=CRON_SECRET,
     )
+    import push
+
+    os.environ["VAPID_PRIVATE_KEY"] = push.generate_private_key_b64()
     import app  # runs init_db(), which applies the migrations
 
     app.app.config["TESTING"] = True
@@ -45,7 +50,7 @@ def app_module():
 def client(app_module):
     conn = psycopg2.connect(TEST_DB)
     with conn, conn.cursor() as cur:
-        cur.execute("TRUNCATE transactions, recurring_payments, login_failures RESTART IDENTITY CASCADE")
+        cur.execute("TRUNCATE transactions, recurring_payments, login_failures, push_subscriptions RESTART IDENTITY CASCADE")
     conn.close()
     return app_module.app.test_client()
 

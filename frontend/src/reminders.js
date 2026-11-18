@@ -1,32 +1,16 @@
 // Bill reminders.
 //
 // The server decides each bill's status (overdue / due_soon / ok) in
-// recurring.py, so the app, and later push notifications, agree on what is
-// "due". This module turns the /recurring/upcoming response into reminders
-// and hands them to every registered channel.
+// recurring.py, so the app and push notifications agree on what is "due".
+// This module turns the /recurring/upcoming response into in-app reminders.
 //
-// Phase 1 (now): in-app only. App.jsx reads the reminders through
-// useReminders() for the Spending-tab banner and the badge on the Bills tab.
+// In-app (phase 1): App.jsx reads the reminders through useReminders() for
+// the Spending-tab banner and the badge on the Bills tab.
 //
-// Phase 2 (not built yet): web push. Plan:
-//   1. Backend: a push_subscriptions table (user_id, endpoint, keys), VAPID keys
-//      in Render env vars, and POST/DELETE /api/push/subscription routes.
-//   2. Backend: a daily job that, per user, selects active bills where
-//      rc.due_status(...) is "due_soon" or "overdue" and sends one web push.
-//      It must be triggered from outside (Render's free plan has no workers):
-//      for example a Render Cron Job or the existing uptime pinger calling a
-//      secret-protected endpoint.
-//   3. Frontend: switch vite-plugin-pwa to `injectManifest` with a custom
-//      service worker that handles `push` and `notificationclick` (open the
-//      Bills tab), then register a channel here:
-//
-//        registerReminderChannel({
-//          name: "push",
-//          notify: (reminders) => { ...ask permission once, subscribe via
-//            registration.pushManager and POST the subscription... },
-//        });
-//
-// Nothing else in the app needs to change for phase 2.
+// Push (phase 2): sent by the server, not from here. A daily GitHub Actions
+// run (.github/workflows/bill-reminders.yml) calls /api/push/run-daily, which
+// builds each user's digest with recurring.build_digest(). push.js turns
+// notifications on/off for this device; sw.js shows them.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { upcomingBills } from "./recurringApi.js";
@@ -49,21 +33,6 @@ export function computeReminders(items) {
 }
 
 const EMPTY = computeReminders([]);
-const channels = [];
-
-export function registerReminderChannel(channel) {
-  if (!channels.some((c) => c.name === channel.name)) channels.push(channel);
-}
-
-function dispatch(reminders) {
-  for (const channel of channels) {
-    try {
-      channel.notify(reminders);
-    } catch {
-      // a failing channel must never break the app
-    }
-  }
-}
 
 export function useReminders(authFetch) {
   const [reminders, setReminders] = useState(EMPTY);
@@ -76,7 +45,6 @@ export function useReminders(authFetch) {
     if (!result.ok) return; // best effort: keep the last known reminders
     const next = computeReminders(result.data.items);
     setReminders(next);
-    dispatch(next);
   }, [authFetch]);
 
   useEffect(() => {

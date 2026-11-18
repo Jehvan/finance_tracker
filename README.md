@@ -86,6 +86,22 @@ No local computer needs to stay on — everything runs on Render + Supabase.
   build command `npm install && npm run build` → publish directory `dist` →
   under **Redirects/Rewrites** add a *Rewrite* from `/api/*` to `https://<your-backend-url>/api/*`.
 
+## Bill reminder notifications (optional)
+
+Push notifications for bills that are due soon or overdue. One-time setup:
+
+1. Generate a key: `cd backend && python push.py` and set the output as `VAPID_PRIVATE_KEY`
+   on the API service in Render.
+2. Pick a random secret (e.g. `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
+   and set it both as `PUSH_CRON_SECRET` on the API service in Render and as a repository
+   secret `PUSH_CRON_SECRET` on GitHub (Settings → Secrets and variables → Actions).
+3. On your phone, open the app from the Home Screen (required on iPhone, iOS 16.4+), go to
+   Bills → "Reminders on this device" → Turn on reminders, then "Send a test".
+
+`.github/workflows/bill-reminders.yml` runs once a day (around 7–8am Skopje time) and the API
+sends each device one notification listing bills that need attention — names and due dates
+only, never amounts. You can also run it from the repo's Actions tab ("Run workflow").
+
 ## Notes
 
 - Render's **free web services spin down after ~15 min of inactivity** and take a few

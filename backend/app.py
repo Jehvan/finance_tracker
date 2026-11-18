@@ -17,6 +17,7 @@ from flask_cors import CORS
 from psycopg2 import sql
 from werkzeug.security import check_password_hash
 
+import push
 import recurring as rc
 
 # NUMERIC columns come back from psycopg2 as Decimal by default, which
@@ -41,6 +42,16 @@ MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 # "Today" for due dates/overdue checks. Render runs in UTC, so without this a
 # bill due today would flip to overdue at 1-2am local time.
 APP_TZ = ZoneInfo(os.environ.get("APP_TIMEZONE", "Europe/Skopje"))
+
+# Web push (bill reminders). Off unless VAPID_PRIVATE_KEY is set; generate one
+# with `python push.py`. The daily run is triggered by .github/workflows/
+# bill-reminders.yml, authenticated with PUSH_CRON_SECRET (unset = disabled).
+VAPID = push.load_vapid_key(os.environ.get("VAPID_PRIVATE_KEY"))
+VAPID_PUBLIC_KEY = push.public_key_b64(VAPID) if VAPID else None
+# Contact claim push services require; the site URL avoids publishing an email.
+VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT") or os.environ["FRONTEND_ORIGIN"]
+PUSH_CRON_SECRET = os.environ.get("PUSH_CRON_SECRET", "")
+MAX_PUSH_SUBSCRIPTIONS_PER_USER = 10
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024  # every request here is a small JSON body
@@ -838,6 +849,170 @@ def mark_recurring_paid(item_id):
         return jsonify({"error": "already marked paid for that due date"}), 409
 
     return jsonify({"transaction_id": tx_id, "item": serialize_recurring(updated, today)}), 201
+
+# ---------- Push notifications (bill reminders, phase 2) ----------
+
+def push_disabled():
+    return jsonify({"error": "push notifications aren't configured on the server"}), 503
+
+
+@app.route("/api/push/config", methods=["GET"])
+@require_auth
+def push_config():
+    return jsonify({"enabled": VAPID is not None, "public_key": VAPID_PUBLIC_KEY})
+
+
+@app.route("/api/push/subscription", methods=["POST"])
+@require_auth
+def save_push_subscription():
+    if VAPID is None:
+        return push_disabled()
+    data, err = json_body()
+    if err:
+        return err
+    try:
+        sub = push.clean_subscription(data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    db = get_db()
+    cur = db.cursor()
+    # Keep the newest few devices per user so the table can't grow without bound.
+    cur.execute(
+        """
+        DELETE FROM push_subscriptions WHERE id IN (
+            SELECT id FROM push_subscriptions
+            WHERE user_id = %s AND endpoint <> %s
+            ORDER BY created_at DESC OFFSET %s
+        )
+        """,
+        (g.user_id, sub["endpoint"], MAX_PUSH_SUBSCRIPTIONS_PER_USER - 1),
+    )
+    # One row per browser: re-subscribing refreshes its keys (and owner, if a
+    # different user now signs in on that browser).
+    cur.execute(
+        """
+        INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (endpoint) DO UPDATE
+            SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth
+        """,
+        (g.user_id, sub["endpoint"], sub["p256dh"], sub["auth"]),
+    )
+    db.commit()
+    return jsonify({"ok": True}), 201
+
+
+@app.route("/api/push/subscription", methods=["DELETE"])
+@require_auth
+def delete_push_subscription():
+    data, err = json_body()
+    if err:
+        return err
+    endpoint = data.get("endpoint")
+    if not isinstance(endpoint, str) or len(endpoint) > push.MAX_ENDPOINT_LEN:
+        return jsonify({"error": "endpoint is required"}), 400
+    db = get_db()
+    cur = db.cursor()
+    # Scoped to the caller: you can only remove your own devices.
+    cur.execute("DELETE FROM push_subscriptions WHERE endpoint = %s AND user_id = %s", (endpoint, g.user_id))
+    db.commit()
+    return "", 204  # idempotent: already gone is fine
+
+
+def send_to_subscriptions(cur, rows, payload):
+    """Send `payload` to each subscription row; drop ones the browser revoked."""
+    counts = {"sent": 0, "removed": 0, "failed": 0}
+    for row in rows:
+        result = push.send_notification(row, payload, VAPID, VAPID_SUBJECT)
+        if result == "gone":
+            cur.execute("DELETE FROM push_subscriptions WHERE id = %s", (row["id"],))
+            counts["removed"] += 1
+        else:
+            counts[result] += 1
+    return counts
+
+
+@app.route("/api/push/test", methods=["POST"])
+@require_auth
+def send_test_push():
+    """Sends a test notification to the caller's own devices."""
+    if VAPID is None:
+        return push_disabled()
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM push_subscriptions WHERE user_id = %s", (g.user_id,))
+    payload = {
+        "title": "Bill reminders are on",
+        "body": "You'll get a notification on days a bill is due soon or overdue.",
+        "url": "/?tab=bills",
+        "tag": "bills-test",
+    }
+    counts = send_to_subscriptions(cur, cur.fetchall(), payload)
+    db.commit()
+    return jsonify(counts)
+
+
+@app.route("/api/push/run-daily", methods=["POST"])
+def run_daily_push():
+    """Called once a day by the GitHub Actions workflow (no user session).
+
+    Sends each subscribed device one digest of bills that are overdue or inside
+    their reminder window. Safe to call repeatedly: each device is claimed for
+    today before sending, so retries and overlapping runs never double-send.
+    """
+    supplied = request.headers.get("X-Cron-Secret", "")
+    if not PUSH_CRON_SECRET or not hmac.compare_digest(supplied.encode(), PUSH_CRON_SECRET.encode()):
+        return jsonify({"error": "not found"}), 404  # don't advertise the endpoint
+    if VAPID is None:
+        return push_disabled()
+
+    today = app_today()
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT DISTINCT user_id FROM push_subscriptions WHERE last_notified_on IS DISTINCT FROM %s", (today,))
+    totals = {"users": 0, "sent": 0, "removed": 0, "failed": 0, "nothing_due": 0}
+    for user_id in [r["user_id"] for r in cur.fetchall()]:
+        cur.execute(
+            "SELECT name, next_due_date, reminder_days_before, is_active "
+            "FROM recurring_payments WHERE user_id = %s AND is_active",
+            (user_id,),
+        )
+        digest = rc.build_digest(cur.fetchall(), today)
+        # Claim today's send for this user's devices (atomic; a parallel run gets none).
+        cur.execute(
+            """
+            WITH unclaimed AS (
+                SELECT id, last_notified_on FROM push_subscriptions
+                WHERE user_id = %s AND last_notified_on IS DISTINCT FROM %s
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE push_subscriptions p SET last_notified_on = %s
+            FROM unclaimed WHERE p.id = unclaimed.id
+            RETURNING p.*, unclaimed.last_notified_on AS previous
+            """,
+            (user_id, today, today),
+        )
+        claimed = cur.fetchall()
+        db.commit()
+        totals["users"] += 1
+        if digest is None:
+            totals["nothing_due"] += 1
+            continue
+        for row in claimed:
+            result = push.send_notification(row, digest, VAPID, VAPID_SUBJECT)
+            if result == "gone":
+                cur.execute("DELETE FROM push_subscriptions WHERE id = %s", (row["id"],))
+                totals["removed"] += 1
+            elif result == "failed":
+                # Release the claim so a retry later today tries this device again.
+                cur.execute("UPDATE push_subscriptions SET last_notified_on = %s WHERE id = %s", (row["previous"], row["id"]))
+                totals["failed"] += 1
+            else:
+                totals["sent"] += 1
+            db.commit()
+    return jsonify(totals)
+
 
 init_db()  # runs on import too, so gunicorn (used in production) creates the tables
 

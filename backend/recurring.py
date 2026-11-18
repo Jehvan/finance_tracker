@@ -267,3 +267,53 @@ def clean_payload(data, partial=False):
     if "next_due_date" in cleaned:
         cleaned["billing_anchor_day"] = cleaned["next_due_date"].day
     return cleaned
+
+
+# ---------- Push notification digest ----------
+
+DIGEST_MAX_LINES = 3
+DIGEST_NAME_MAX = 40
+
+
+def _due_phrase(days):
+    if days < -1:
+        return f"{-days} days overdue"
+    if days == -1:
+        return "1 day overdue"
+    if days == 0:
+        return "due today"
+    if days == 1:
+        return "due tomorrow"
+    return f"due in {days} days"
+
+
+def build_digest(items, today):
+    """The daily reminder notification for one user, or None if nothing needs attention.
+
+    `items` are bill rows (name, next_due_date, reminder_days_before, is_active).
+    Lock screens are visible to anyone nearby, so the text names bills and
+    when they're due but never includes amounts.
+    """
+    attention = []
+    for item in items:
+        status = due_status(item["next_due_date"], today, item["reminder_days_before"], item["is_active"])
+        if status in ("overdue", "due_soon"):
+            attention.append(((item["next_due_date"] - today).days, item["name"]))
+    if not attention:
+        return None
+
+    attention.sort()
+    n = len(attention)
+    lines = []
+    for days, name in attention[:DIGEST_MAX_LINES]:
+        if len(name) > DIGEST_NAME_MAX:
+            name = name[: DIGEST_NAME_MAX - 1] + "…"
+        lines.append(f"{name}: {_due_phrase(days)}")
+    if n > DIGEST_MAX_LINES:
+        lines.append(f"+{n - DIGEST_MAX_LINES} more")
+    return {
+        "title": "1 bill needs attention" if n == 1 else f"{n} bills need attention",
+        "body": "\n".join(lines),
+        "url": "/?tab=bills",
+        "tag": "bills-digest",  # a newer digest replaces the old one instead of stacking
+    }

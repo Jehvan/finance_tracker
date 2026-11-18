@@ -721,7 +721,11 @@ const TABS = [
 ];
 
 export default function App() {
-  const [tab, setTab] = useState("spending");
+  // A tapped bill notification opens /?tab=bills.
+  const [tab, setTab] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    return TABS.some(([id]) => id === requested) ? requested : "spending";
+  });
   // "checking" until /api/session answers; the HttpOnly cookie itself is unreadable here.
   const [auth, setAuth] = useState("checking"); // "checking" | "signed-in" | "signed-out"
 

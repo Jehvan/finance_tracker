@@ -7,6 +7,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      // Our own service worker (src/sw.js) so it can show bill-reminder push
+      // notifications; it still precaches the app shell like before.
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.js",
       includeAssets: ["icons/icon-192.png", "icons/icon-512.png"],
       manifest: {
         name: "Finance Tracker",
@@ -29,10 +34,10 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        // cache the app shell so it opens even with a flaky connection;
-        // API calls to the Flask backend are NOT cached (always fresh data)
-        runtimeCaching: [],
+      injectManifest: {
+        // precache the app shell so it opens on a flaky connection (same set as
+        // before; font files load on demand). API calls are never cached.
+        globPatterns: ["**/*.{js,css,html}"],
       },
     }),
   ],

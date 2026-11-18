@@ -23,6 +23,10 @@ services:
         sync: false   # set to your deployed frontend's exact URL, e.g. https://finance-tracker-frontend.onrender.com
       - key: APP_TIMEZONE
         value: Europe/Skopje   # "today" for bill due dates
+      - key: VAPID_PRIVATE_KEY
+        sync: false   # bill-reminder push key; generate with: cd backend && python push.py
+      - key: PUSH_CRON_SECRET
+        sync: false   # random string; same value as the GitHub repo secret PUSH_CRON_SECRET
 
   - type: web
     name: finance-tracker-frontend

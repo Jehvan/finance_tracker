@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Money, formatDate, localDateString, parseISODate } from "./shared.jsx";
+import PushSettings from "./PushSettings.jsx";
 import {
   CATEGORY_LABEL,
   CYCLE_LABEL,
@@ -357,6 +358,7 @@ export default function SubscriptionsTab({ authFetch, onChanged }) {
               )}
             </>
           )}
+          <PushSettings authFetch={authFetch} />
         </>
       )}
     </div>
