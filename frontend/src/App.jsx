@@ -9,33 +9,19 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-
-// In production (Render), set VITE_API_BASE to your backend's Render URL,
-// e.g. https://finance-tracker-api.onrender.com/api
-// Locally, it falls back to whatever host you loaded the page from,
-// so it works whether you open it via localhost or your LAN IP.
-const API_BASE = (
-  import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:5000/api`
-).replace(/\/+$/, "");
+import {
+  API_BASE,
+  EUR_TO_MKD_RATE,
+  Money,
+  errorMessageFrom,
+  localDateString,
+  makeAuthFetch,
+} from "./shared.jsx";
+import SubscriptionsTab from "./Subscriptions.jsx";
 
 const COLORS = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA", "#F87171", "#4ADE80"];
 
 const TOKEN_KEY = "finance_tracker_token";
-
-// The denar is pegged to the euro by the National Bank of the Republic of
-// North Macedonia at a fixed rate (has held ~61.5 since 1997), so a static
-// conversion is appropriate here rather than fetching a live FX rate.
-const EUR_TO_MKD_RATE = 61.5;
-
-// All date/month logic uses the device's local time, not UTC — otherwise a
-// transaction added in the evening (US timezones) or just after midnight
-// (timezones ahead of UTC) can land on the wrong day/month.
-function localDateString(d = new Date()) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 function currentMonthString() {
   return localDateString().slice(0, 7);
@@ -112,11 +98,6 @@ function LoginForm({ onLogin }) {
       </main>
     </div>
   );
-}
-
-function Money({ value }) {
-  const n = Number(value ?? 0);
-  return <span>{n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
 }
 
 // Custom dropdown instead of <datalist> — native datalist support/appearance
@@ -200,29 +181,6 @@ function TypeaheadInput({ id, value, onChange, options, placeholder, required })
       )}
     </div>
   );
-}
-
-function makeAuthFetch(token, onUnauthorized) {
-  return async function authFetch(url, options = {}) {
-    const res = await fetch(url, {
-      ...options,
-      headers: { ...options.headers, Authorization: `Bearer ${token}` },
-    });
-    if (res.status === 401) {
-      onUnauthorized();
-      throw new Error("unauthorized");
-    }
-    return res;
-  };
-}
-
-async function errorMessageFrom(res, fallback) {
-  try {
-    const data = await res.json();
-    return data.error || fallback;
-  } catch {
-    return fallback;
-  }
 }
 
 function SpendingTab({ authFetch }) {
@@ -717,37 +675,39 @@ export default function App() {
     setToken(newToken);
   }
 
-  function handleLogout() {
+  const handleLogout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
-  }
+  }, []);
+
+  // Stable per token, so re-rendering App doesn't make every tab refetch.
+  const authFetch = useMemo(() => (token ? makeAuthFetch(token, handleLogout) : null), [token, handleLogout]);
 
   if (!token) return <LoginForm onLogin={handleLogin} />;
 
-  const authFetch = makeAuthFetch(token, handleLogout);
+  const tabs = [
+    ["spending", "Spending"],
+    ["investing", "Investing"],
+    ["bills", "Bills"],
+  ];
 
   return (
     <div className="app">
       <header className="app-header">
         <h1>Finance Tracker</h1>
         <nav className="tabs">
-          <button
-            className={tab === "spending" ? "active" : ""}
-            onClick={() => setTab("spending")}
-          >
-            Spending
-          </button>
-          <button
-            className={tab === "investing" ? "active" : ""}
-            onClick={() => setTab("investing")}
-          >
-            Investing
-          </button>
+          {tabs.map(([id, label]) => (
+            <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
           <button onClick={handleLogout}>Log out</button>
         </nav>
       </header>
       <main>
-        {tab === "spending" ? <SpendingTab authFetch={authFetch} /> : <InvestingTab authFetch={authFetch} />}
+        {tab === "spending" && <SpendingTab authFetch={authFetch} />}
+        {tab === "investing" && <InvestingTab authFetch={authFetch} />}
+        {tab === "bills" && <SubscriptionsTab authFetch={authFetch} />}
       </main>
     </div>
   );
