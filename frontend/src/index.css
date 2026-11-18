@@ -1119,10 +1119,11 @@ select {
 /* ---------- Push reminder settings (Bills tab) ---------- */
 
 .push-card {
-  margin: 0 0 1.75rem;
-  padding: 1rem 1.1rem;
-  background: var(--card);
-  border-radius: var(--radius-lg);
+  /* A settings section, not another bill box: unboxed, below a divider,
+     aligned with the "Paused" heading. */
+  margin: 2.5rem 0 1.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
 }
 
 .push-card-text {

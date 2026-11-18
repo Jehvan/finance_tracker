@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { disablePush, enablePush, pushState, sendTestPush } from "./push.js";
+import { enablePush, pushState, sendTestPush } from "./push.js";
 
 const STATE_TEXT = {
   checking: "Checking this device…",
@@ -10,7 +10,9 @@ const STATE_TEXT = {
   unsupported: "This browser can't show notifications from the app.",
 };
 
-// "Reminders on this device" card at the bottom of the Bills tab.
+// "Reminders on this device" section at the bottom of the Bills tab. Hidden
+// once reminders are on for this device (turn them off in the phone's
+// notification settings); shown again if they're off or blocked.
 export default function PushSettings({ authFetch }) {
   const [state, setState] = useState("checking");
   const [busy, setBusy] = useState(false);
@@ -37,14 +39,15 @@ export default function PushSettings({ authFetch }) {
 
   const turnOn = () =>
     run(() => enablePush(authFetch)).then((r) => (r.ok ? setMessage("Reminders are on.") : setError(r.error)));
-  const turnOff = () =>
-    run(() => disablePush(authFetch)).then((r) => (r.ok ? setMessage("Reminders are off for this device.") : setError(r.error)));
   const test = () =>
     run(() => sendTestPush(authFetch)).then((r) => {
       if (!r.ok) setError(r.error);
       else if (r.data.sent > 0) setMessage("Test sent. It should appear in a few seconds.");
       else setError("No device received it. Try turning reminders off and on again.");
     });
+
+  // "Turn on" just succeeded: keep the confirmation visible this once.
+  if (state === "checking" || (state === "on" && !message)) return null;
 
   return (
     <section className="push-card" aria-labelledby="push-card-title">
@@ -57,10 +60,7 @@ export default function PushSettings({ authFetch }) {
               {busy ? "Turning on…" : "Turn on reminders"}
             </button>
           ) : (
-            <>
-              <button className="bill-secondary" onClick={test} disabled={busy}>Send a test</button>
-              <button className="bill-secondary" onClick={turnOff} disabled={busy}>Turn off</button>
-            </>
+            <button className="bill-secondary" onClick={test} disabled={busy}>Send a test</button>
           )}
         </div>
       )}
