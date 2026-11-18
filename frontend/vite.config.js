@@ -12,8 +12,8 @@ export default defineConfig({
         name: "Finance Tracker",
         short_name: "Finance",
         description: "Personal spending and investing tracker",
-        theme_color: "#101827",
-        background_color: "#101827",
+        theme_color: "#1C1424",
+        background_color: "#1C1424",
         display: "standalone",
         start_url: "/",
         icons: [

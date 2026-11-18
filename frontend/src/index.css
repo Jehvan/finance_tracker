@@ -1,11 +1,26 @@
+/* Aubergine ground, coin-gold for money in (and the main action), rose for
+   money out. Gold vs rose stays distinguishable for red-green colour
+   blindness, and the +/− signs carry the meaning on their own too. */
 :root {
-  --bg: #101827;
-  --card: #1a2436;
-  --border: #2a3547;
-  --text: #e5e9f0;
-  --muted: #8b96a8;
-  --green: #34d399;
-  --red: #f87171;
+  --bg: #1c1424;
+  --card: #271d31;
+  --card-raised: #31263d;
+  --border: #3a2e46;
+  --text: #f3edf5;
+  --muted: #a597b2;
+  --gold: #f2c14e;
+  --rose: #f2789f;
+  --on-gold: #2a1d05;
+
+  --font-ui: "Golos Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-figure: "Unbounded", var(--font-ui);
+
+  --radius-lg: 22px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+  --tap: 44px;
+  --gutter: 1.25rem;
+  --tabbar-h: 3.5rem;
   color-scheme: dark;
 }
 
@@ -17,64 +32,251 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .app {
   max-width: 480px;
   margin: 0 auto;
   min-height: 100vh;
+  /* room for the fixed tab bar plus the home indicator */
+  padding-bottom: calc(var(--tabbar-h) + 1.5rem + env(safe-area-inset-bottom));
+}
+
+.app-login {
   padding-bottom: calc(2rem + env(safe-area-inset-bottom));
 }
 
+/* ---------- Header ---------- */
+
 .app-header {
-  padding: calc(1.5rem + env(safe-area-inset-top)) 1.25rem 0.75rem;
   position: sticky;
   top: 0;
-  background: var(--bg);
   z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: calc(0.75rem + env(safe-area-inset-top)) var(--gutter) 0.5rem;
+  padding-left: calc(var(--gutter) + env(safe-area-inset-left));
+  padding-right: calc(var(--gutter) + env(safe-area-inset-right));
+  background: var(--bg);
 }
 
-.app-header h1 {
-  font-size: 1.4rem;
-  margin: 0 0 1rem;
-  letter-spacing: -0.01em;
+.wordmark {
+  margin: 0;
+  font-family: var(--font-figure);
+  font-weight: 700;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+
+.logout-btn {
+  min-height: var(--tap);
+  padding: 0 0.25rem;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* ---------- Bottom tab bar ---------- */
 
 .tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
   display: flex;
+  justify-content: center;
   gap: 0.5rem;
-  border-bottom: 1px solid var(--border);
+  padding: 0.5rem calc(var(--gutter) + env(safe-area-inset-right))
+    calc(0.5rem + env(safe-area-inset-bottom)) calc(var(--gutter) + env(safe-area-inset-left));
+  background: rgba(28, 20, 36, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--border);
 }
 
 .tabs button {
   flex: 1;
+  max-width: 220px;
+  min-height: var(--tap);
   background: none;
   border: none;
+  border-radius: 999px;
   color: var(--muted);
-  padding: 0.75rem 0;
   font-size: 0.95rem;
   font-weight: 600;
-  border-bottom: 2px solid transparent;
   cursor: pointer;
 }
 
 .tabs button.active {
+  background: var(--card-raised);
   color: var(--text);
-  border-bottom-color: var(--green);
 }
 
 .tab-content {
-  padding: 1.25rem;
+  padding: 0.5rem var(--gutter) 0;
+  padding-left: calc(var(--gutter) + env(safe-area-inset-left));
+  padding-right: calc(var(--gutter) + env(safe-area-inset-right));
 }
+
+/* ---------- Hero: the one loud thing on the screen ---------- */
+
+.hero {
+  min-width: 0;
+  margin-bottom: 1.5rem;
+}
+
+.range-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 0 1rem -0.6rem;
+}
+
+.range-nav {
+  width: var(--tap);
+  height: var(--tap);
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--text);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.range-nav:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.range-label {
+  font-weight: 600;
+  font-size: 1rem;
+  text-align: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.range-toggle {
+  margin-left: auto;
+  min-height: var(--tap);
+  padding: 0 0.9rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.hero-label {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+}
+
+.hero-value {
+  font-family: var(--font-figure);
+  font-weight: 700;
+  font-size: clamp(2rem, 10vw, 2.75rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hero-unit {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  color: var(--muted);
+  margin-left: 0.4rem;
+}
+
+.hero-split {
+  display: flex;
+  gap: 1.5rem;
+  margin: 1rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.hero-split > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.hero-split dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.hero-split dd {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-figure);
+  font-weight: 500;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.earn {
+  color: var(--gold);
+}
+
+.spend {
+  color: var(--rose);
+}
+
+/* ---------- Entry form ---------- */
 
 .quick-add {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-bottom: 1.25rem;
+  align-items: flex-start;
+  margin-bottom: 1.75rem;
+  padding: 0.75rem;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+}
+
+.app-login .quick-add {
+  margin-top: 0.5rem;
+}
+
+.login-intro {
+  color: var(--muted);
+  margin: 0.5rem 0 0;
 }
 
 .quick-add input,
@@ -85,15 +287,64 @@ body {
   min-width: 0;
 }
 
+/* 16px minimum: anything smaller makes iOS Safari zoom in on focus. */
 .quick-add input,
-.quick-add select {
-  background: var(--card);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 0.6rem 0.7rem;
-  border-radius: 8px;
-  font-size: 0.9rem;
+.quick-add select,
+.typeahead input {
+  min-height: var(--tap);
+  background: var(--bg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.85rem;
+  font-size: 16px;
   min-width: 0;
+}
+
+.quick-add input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.quick-add input:focus,
+.quick-add select:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.segmented {
+  flex: 1 1 100%;
+  display: flex;
+  padding: 3px;
+  background: var(--bg);
+  border-radius: var(--radius-md);
+}
+
+.segmented button {
+  flex: 1;
+  min-height: calc(var(--tap) - 6px);
+  background: none;
+  border: none;
+  border-radius: calc(var(--radius-md) - 3px);
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segmented button.on {
+  background: var(--card-raised);
+}
+
+.segmented button.on.expense {
+  color: var(--rose);
+}
+
+.segmented button.on.income {
+  color: var(--gold);
+}
+
+.quick-add .amount-field,
+.quick-add .typeahead {
+  flex-basis: 100%;
 }
 
 .amount-field {
@@ -104,20 +355,29 @@ body {
 .amount-field input {
   flex: 1;
   min-width: 0;
+  font-family: var(--font-figure);
+  font-weight: 500;
+}
+
+.amount-field input::placeholder {
+  font-family: var(--font-ui);
+  font-weight: 400;
 }
 
 .amount-field select {
   flex: 0 0 auto;
   width: auto;
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
+  padding-left: 0.6rem;
+  padding-right: 0.6rem;
+  font-weight: 600;
 }
 
 .amount-conversion {
   flex: 1 1 100%;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: var(--muted);
-  margin-top: -0.3rem;
+  padding: 0 0.4rem;
+  overflow-wrap: anywhere;
 }
 
 .typeahead {
@@ -127,33 +387,30 @@ body {
 
 .typeahead input {
   width: 100%;
-  background: var(--card);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 0.6rem 0.7rem;
-  border-radius: 8px;
-  font-size: 0.9rem;
 }
 
 /* Rendered in normal document flow (not absolutely positioned) so opening
    it pushes later form fields/buttons down instead of covering them. */
 .typeahead-list {
+  position: static;
   list-style: none;
   margin: 4px 0 0;
   padding: 0.25rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  max-height: 180px;
+  background: var(--card-raised);
+  border-radius: var(--radius-md);
+  max-height: 200px;
   overflow-y: auto;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
 }
 
 .typeahead-list li {
-  padding: 0.6rem;
-  border-radius: 6px;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  padding: 0 0.7rem;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
 }
 
 .typeahead-list li:hover,
@@ -161,65 +418,34 @@ body {
   background: var(--border);
 }
 
-.quick-add button {
+.primary-btn,
+.quick-add button[type="submit"] {
   flex: 1 1 100%;
-  background: var(--green);
-  color: #0a1120;
+  min-height: 3rem;
+  background: var(--gold);
+  color: var(--on-gold);
   border: none;
-  padding: 0.65rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 1rem;
   cursor: pointer;
 }
 
-.range-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
+.primary-btn:active {
+  transform: scale(0.985);
 }
 
-.range-nav {
-  background: var(--card);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 8px;
-  width: 2.75rem;
-  height: 2.75rem;
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
+.quick-add button[type="submit"]:disabled {
+  opacity: 0.6;
 }
 
-.range-nav:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
+/* ---------- Sections ---------- */
 
-.range-label {
-  font-size: 0.9rem;
+.section-title {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
   font-weight: 600;
-  min-width: 8rem;
-  text-align: center;
-}
-
-.range-toggle {
-  margin-left: auto;
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 8px;
-  padding: 0.4rem 0.7rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.summary-row {
-  display: flex;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+  color: var(--text);
 }
 
 .category-filter {
@@ -232,43 +458,74 @@ body {
 
 .category-filter .section-title {
   margin: 0;
+  min-width: 0;
 }
 
 .category-filter select {
+  min-height: var(--tap);
+  max-width: 55%;
   background: var(--card);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 0.4rem 0.6rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
+  border: none;
+  border-radius: 999px;
+  padding: 0 0.9rem;
+  font-size: 16px;
+  color: var(--muted);
 }
 
-.category-total {
-  margin-bottom: 1.25rem;
+.chart-wrap {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1.75rem;
+  padding: 0.5rem 0.25rem;
+  min-width: 0;
 }
 
 .stat-card {
-  flex: 1;
   min-width: 0;
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.85rem 1rem;
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.1rem;
+}
+
+.category-total {
+  margin-bottom: 1.75rem;
+}
+
+.stat-label {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.stat-value {
+  font-family: var(--font-figure);
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.stat-value.spend {
+  color: var(--rose);
+}
+
+.stat-value.earn {
+  color: var(--gold);
 }
 
 .category-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  margin-bottom: 1.25rem;
-  font-size: 0.9rem;
+  margin-bottom: 1.75rem;
 }
 
 .category-table td {
-  padding: 0.6rem 0.9rem;
+  padding: 0.75rem 1.1rem;
   border-top: 1px solid var(--border);
   overflow-wrap: anywhere;
 }
@@ -279,97 +536,58 @@ body {
 
 .category-table-amount {
   text-align: right;
-  font-weight: 700;
+  font-family: var(--font-figure);
+  font-weight: 500;
+  font-size: 0.95rem;
   font-variant-numeric: tabular-nums;
-  color: var(--green);
-  white-space: nowrap;
+  color: var(--gold);
 }
 
-.stat-label {
-  font-size: 0.75rem;
-  color: var(--muted);
-  margin-bottom: 0.25rem;
-  overflow-wrap: anywhere;
-}
-
-.stat-value {
-  font-size: 1.25rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-
-.stat-value.spend {
-  color: var(--red);
-}
-
-.stat-value.earn {
-  color: var(--green);
-}
-
-.chart-wrap {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  margin-bottom: 1.25rem;
-  padding: 0.5rem 0;
-}
-
-.section-title {
-  font-size: 0.9rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 0 0 0.6rem;
-}
+/* ---------- Transaction / holding list: one grouped list, hairlines between rows ---------- */
 
 .tx-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .tx-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.7rem 0.9rem;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.7rem 0.25rem 0.7rem 1.1rem;
+  position: relative;
+}
+
+.tx-row + .tx-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 1.1rem;
+  right: 0;
+  border-top: 1px solid var(--border);
 }
 
 .tx-main {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.1rem;
   min-width: 0;
-}
-
-.tx-amount {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-
-.tx-amount.expense {
-  color: var(--red);
-}
-
-.tx-amount.income {
-  color: var(--green);
+  flex: 1 1 auto;
 }
 
 .tx-category {
-  font-size: 0.95rem;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
 .tx-note {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -377,53 +595,109 @@ body {
 .tx-side {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.tx-figures {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
   min-width: 0;
 }
 
-.tx-date {
-  font-size: 0.75rem;
+.tx-amount {
+  font-family: var(--font-figure);
+  font-weight: 500;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.tx-amount.expense {
+  color: var(--rose);
+}
+
+.tx-amount.income {
+  color: var(--gold);
+}
+
+.tx-amount.unpriced {
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
   color: var(--muted);
+}
+
+.tx-date {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .delete-btn {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.9rem;
-  width: 2.75rem;
-  height: 2.75rem;
+  width: var(--tap);
+  height: var(--tap);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 0.85rem;
+  opacity: 0.6;
+  cursor: pointer;
 }
 
-.delete-btn:hover {
-  color: var(--red);
+.delete-btn:hover,
+.delete-btn:focus-visible {
+  color: var(--rose);
+  opacity: 1;
 }
+
+/* ---------- States ---------- */
 
 .empty-state {
   color: var(--muted);
   text-align: center;
   padding: 2rem 1rem;
-  font-size: 0.9rem;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  overflow-wrap: anywhere;
 }
 
 .retry-btn {
   margin-top: 0.75rem;
-  background: var(--card);
-  border: 1px solid var(--border);
+  min-height: var(--tap);
+  padding: 0 1.25rem;
+  background: var(--card-raised);
+  border: none;
+  border-radius: 999px;
   color: var(--text);
-  border-radius: 8px;
-  padding: 0.5rem 1rem;
-  font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .form-error {
-  color: var(--red);
-  font-size: 0.85rem;
-  margin: -0.75rem 0 1rem;
+  color: var(--rose);
+  font-size: 0.9rem;
+  margin: -1.25rem 0 1.5rem;
+  padding: 0 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: -0.75rem 0 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary-btn:active {
+    transform: none;
+  }
 }
