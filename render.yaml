@@ -21,6 +21,8 @@ services:
         sync: false   # generate with: python3 -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('yourpassword'))"
       - key: FRONTEND_ORIGIN
         sync: false   # set to your deployed frontend's exact URL, e.g. https://finance-tracker-frontend.onrender.com
+      - key: APP_TIMEZONE
+        value: Europe/Skopje   # "today" for bill due dates
 
   - type: web
     name: finance-tracker-frontend
@@ -28,6 +30,13 @@ services:
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
+    # Serve the API from the frontend's own origin. Keeps the HttpOnly login
+    # cookie first-party (Safari/iOS blocks third-party cookies) so it can be
+    # SameSite=Strict. Update the destination if your API URL differs.
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://finance-tracker-api.onrender.com/api/*
     envVars:
       - key: VITE_API_BASE
-        value: https://finance-tracker-api.onrender.com/api
+        value: /api

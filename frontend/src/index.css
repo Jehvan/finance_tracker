@@ -294,7 +294,9 @@ body {
 }
 
 .stat-value {
-  font-size: 1.25rem;
+  /* Scales down on narrow phones so typical totals stay on one line; a huge
+     number still wraps rather than overflowing the card. */
+  font-size: clamp(1.05rem, 4.6vw, 1.25rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -429,6 +431,19 @@ body {
   margin: -0.75rem 0 1rem;
 }
 
+/* Full-width card under a pair (e.g. Net under Spent/Earned): label left, value right. */
+.stat-card-wide {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin: -0.25rem 0 1rem;
+}
+
+.stat-card-wide .stat-label {
+  margin-bottom: 0;
+}
+
 /* ---------- Subscriptions & bills ---------- */
 
 .visually-hidden {
@@ -457,7 +472,6 @@ body {
 }
 
 .bill-summary .stat-value {
-  font-size: clamp(1.05rem, 5vw, 1.25rem);
   white-space: nowrap;
   overflow-wrap: normal;
 }

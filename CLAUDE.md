@@ -12,10 +12,10 @@ bank imports or other external financial integrations.
 cd backend && pip install -r requirements-dev.txt
 pytest                                    # logic tests only; API tests skip
 TEST_DATABASE_URL=postgresql://postgres@localhost:5432/finance_test pytest   # + API tests
-python app.py                             # needs DATABASE_URL, SECRET_KEY, ADMIN_PASSWORD_HASH, FRONTEND_ORIGIN
+COOKIE_SECURE=0 python app.py             # needs DATABASE_URL, SECRET_KEY, ADMIN_PASSWORD_HASH, FRONTEND_ORIGIN
 
 # frontend
-cd frontend && npm install && npm run dev  # VITE_API_BASE=http://localhost:5000/api for a local API
+cd frontend && npm install && npm run dev  # proxies /api to localhost:5000 (API_PROXY_TARGET to change)
 npm run build                              # the only frontend check (no tests or lint yet)
 ```
 
@@ -24,6 +24,8 @@ API tests TRUNCATE tables: `TEST_DATABASE_URL` must be a throwaway local DB, nev
 ## Architecture
 
 - `backend/app.py`: every route, auth (`@require_auth` sets `g.user_id` from the JWT `sub`) and `init_db()`.
+  Browser auth is an HttpOnly `ft_session` cookie (SameSite=Strict, Path=/api); `Authorization:
+  Bearer` still works for tests/non-browser clients. Login is rate limited via `login_failures`.
 - `backend/recurring.py`: pure Subscriptions & Bills logic (due-date advancing, cost
   normalization, validation). No Flask or DB imports, so keep new logic there.
 - `backend/migrations/NNN_name.sql`: schema changes. Must be idempotent (`IF NOT EXISTS`);
@@ -47,6 +49,10 @@ API tests TRUNCATE tables: `TEST_DATABASE_URL` must be a throwaway local DB, nev
   `transactions(recurring_payment_id, paid_for_due_date)` prevent duplicate expenses.
 - All tables have RLS enabled with no policies. The app connects as table owner (bypasses RLS);
   this only blocks Supabase's public REST API. Don't add policies or `FORCE` RLS.
+- The API must stay same-origin with the frontend (`/api`: Render rewrite in `render.yaml`, Vite
+  proxy locally). A cross-origin API would make the cookie third-party, which Safari/iOS blocks.
+  Never store the token in localStorage. Cookie-authenticated writes need the
+  `X-Requested-With` header (`CSRF_HEADERS` in shared.jsx); the backend returns 403 without it.
 - The frontend never talks to Supabase and must never receive Supabase credentials
   (`VITE_*` vars end up in the public bundle).
 

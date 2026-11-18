@@ -1,13 +1,15 @@
-// Helpers shared by every tab. The frontend only ever talks to our Flask API
-// (with the user's login token); it never receives Supabase credentials.
+// Helpers shared by every tab. The frontend only ever talks to our Flask API;
+// it never receives Supabase credentials.
 
-// In production (Render), set VITE_API_BASE to your backend's Render URL,
-// e.g. https://finance-tracker-api.onrender.com/api
-// Locally, it falls back to whatever host you loaded the page from,
-// so it works whether you open it via localhost or your LAN IP.
-export const API_BASE = (
-  import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:5000/api`
-).replace(/\/+$/, "");
+// The API is served from this site's own origin under /api: in production a
+// Render rewrite proxies /api/* to the Flask service, and locally Vite's dev
+// server does the same (vite.config.js). Same-origin is what lets the login
+// cookie be HttpOnly + SameSite=Strict (Safari blocks third-party cookies).
+export const API_BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/+$/, "");
+
+// Sent on every API call; the backend refuses cookie-authenticated writes
+// without it (CSRF protection).
+export const CSRF_HEADERS = { "X-Requested-With": "fetch" };
 
 // The denar is pegged to the euro by the National Bank of the Republic of
 // North Macedonia at a fixed rate (has held ~61.5 since 1997), so a static
@@ -42,11 +44,14 @@ export function Money({ value, decimals = 2 }) {
   );
 }
 
-export function makeAuthFetch(token, onUnauthorized) {
+// The session lives in an HttpOnly cookie the browser attaches by itself;
+// page JavaScript never sees the token.
+export function makeAuthFetch(onUnauthorized) {
   return async function authFetch(url, options = {}) {
     const res = await fetch(url, {
       ...options,
-      headers: { ...options.headers, Authorization: `Bearer ${token}` },
+      credentials: "same-origin",
+      headers: { ...options.headers, ...CSRF_HEADERS },
     });
     if (res.status === 401) {
       onUnauthorized();

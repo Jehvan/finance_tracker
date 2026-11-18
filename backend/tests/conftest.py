@@ -14,9 +14,12 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import psycopg2
 import pytest
+from werkzeug.security import generate_password_hash
 
 TEST_DB = os.environ.get("TEST_DATABASE_URL")
 TEST_SECRET = "test-only-signing-key-0123456789abcdef-not-a-real-secret"
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "test-only-password"
 
 
 @pytest.fixture(scope="session")
@@ -28,7 +31,8 @@ def app_module():
     os.environ.update(
         DATABASE_URL=TEST_DB,
         SECRET_KEY=TEST_SECRET,
-        ADMIN_PASSWORD_HASH="unused-in-tests",
+        ADMIN_USERNAME=ADMIN_USERNAME,
+        ADMIN_PASSWORD_HASH=generate_password_hash(ADMIN_PASSWORD),
         FRONTEND_ORIGIN="http://localhost:5173",
     )
     import app  # runs init_db(), which applies the migrations
@@ -41,7 +45,7 @@ def app_module():
 def client(app_module):
     conn = psycopg2.connect(TEST_DB)
     with conn, conn.cursor() as cur:
-        cur.execute("TRUNCATE transactions, recurring_payments RESTART IDENTITY CASCADE")
+        cur.execute("TRUNCATE transactions, recurring_payments, login_failures RESTART IDENTITY CASCADE")
     conn.close()
     return app_module.app.test_client()
 

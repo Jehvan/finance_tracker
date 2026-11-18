@@ -1,3 +1,4 @@
+import hmac
 import math
 import os
 import re
@@ -48,34 +49,131 @@ CORS(app, origins=[os.environ["FRONTEND_ORIGIN"]])  # only the deployed frontend
 
 # ---------- Auth ----------
 
+# The browser holds the login token only in an HttpOnly cookie, so page
+# JavaScript (and any XSS) can never read it. The frontend reaches the API on
+# its own origin (Render rewrite /api/* -> this service, Vite proxy locally),
+# which keeps the cookie first-party and lets it be SameSite=Strict.
+SESSION_COOKIE = "ft_session"
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") != "0"  # set 0 only for local http dev
+# CSRF defense in depth on top of SameSite=Strict: cookie-authenticated writes
+# must carry this header, which a cross-site form can't send and a cross-site
+# fetch can't send without passing a CORS preflight.
+CSRF_HEADER = "X-Requested-With"
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+# Brute-force protection for /api/login, stored in Postgres so it survives the
+# free plan's frequent restarts. Keyed by submitted username (plus a global
+# cap), not IP: behind Render's proxies the client IP isn't reliable.
+LOGIN_WINDOW = timedelta(minutes=15)
+LOGIN_MAX_FAILURES_PER_USERNAME = 5
+LOGIN_MAX_FAILURES_TOTAL = 50
+
+
+def decode_token(token):
+    """The JWT's `sub`, or None if the token is missing, invalid or expired."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        return None
+    sub = payload.get("sub")
+    return sub if isinstance(sub, str) and sub else None
+
+
 def require_auth(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return jsonify({"error": "missing bearer token"}), 401
-        token = auth_header.removeprefix("Bearer ").strip()
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        except jwt.PyJWTError:
-            return jsonify({"error": "invalid or expired token"}), 401
-        sub = payload.get("sub")
-        if not isinstance(sub, str) or not sub:
-            return jsonify({"error": "invalid or expired token"}), 401
+        if auth_header.startswith("Bearer "):
+            # Non-browser clients (and tests). Nothing sends this automatically,
+            # so it needs no CSRF check.
+            sub = decode_token(auth_header.removeprefix("Bearer ").strip())
+        else:
+            sub = decode_token(request.cookies.get(SESSION_COOKIE))
+            if sub and request.method not in SAFE_METHODS and not request.headers.get(CSRF_HEADER):
+                return jsonify({"error": f"missing {CSRF_HEADER} header"}), 403
+        if not sub:
+            return jsonify({"error": "not signed in"}), 401
         g.user_id = sub  # owner key for per-user data (recurring payments)
         return view(*args, **kwargs)
 
     return wrapped
 
 
+def login_rate_keys(username):
+    return [f"user:{username.strip().lower()[:150]}", "*"]
+
+
+def login_retry_after(cur, keys):
+    """Seconds until a login attempt is allowed again, or 0 if allowed now."""
+    cur.execute(
+        """
+        SELECT key, count(*) AS failures,
+               EXTRACT(EPOCH FROM (min(failed_at) + %s - now())) AS retry_after
+        FROM login_failures
+        WHERE key = ANY(%s) AND failed_at > now() - %s
+        GROUP BY key
+        """,
+        (LOGIN_WINDOW, keys, LOGIN_WINDOW),
+    )
+    wait = 0
+    for row in cur.fetchall():
+        limit = LOGIN_MAX_FAILURES_TOTAL if row["key"] == "*" else LOGIN_MAX_FAILURES_PER_USERNAME
+        if row["failures"] >= limit:
+            wait = max(wait, math.ceil(row["retry_after"]))
+    return max(wait, 0)
+
+
+def record_login_failure(cur, keys):
+    cur.execute("DELETE FROM login_failures WHERE failed_at < now() - %s", (LOGIN_WINDOW,))
+    cur.executemany("INSERT INTO login_failures (key) VALUES (%s)", [(k,) for k in keys])
+
+
+def set_session_cookie(response, token):
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=TOKEN_TTL_DAYS * 24 * 3600,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="Strict",
+        path="/api",
+    )
+
+
 @app.route("/api/login", methods=["POST"])
 def login():
-    data = request.get_json(force=True)
-    username = data.get("username", "")
-    password = data.get("password", "")
-    if username != ADMIN_USERNAME or not check_password_hash(ADMIN_PASSWORD_HASH, password):
+    if not request.headers.get(CSRF_HEADER):
+        return jsonify({"error": f"missing {CSRF_HEADER} header"}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    username, password = data.get("username"), data.get("password")
+    if not isinstance(username, str) or not isinstance(password, str) or len(username) > 150 or len(password) > 1024:
         return jsonify({"error": "invalid username or password"}), 401
 
+    db = get_db()
+    cur = db.cursor()
+    keys = login_rate_keys(username)
+    wait = login_retry_after(cur, keys)
+    if wait:
+        db.rollback()
+        minutes = max(1, math.ceil(wait / 60))
+        response = jsonify({"error": f"Too many failed sign-in attempts. Try again in {minutes} min."})
+        response.headers["Retry-After"] = str(wait)
+        return response, 429
+
+    # Always run the (deliberately slow) hash check, so a wrong username takes
+    # as long as a wrong password and response time doesn't reveal which it was.
+    password_ok = check_password_hash(ADMIN_PASSWORD_HASH, password)
+    if not (hmac.compare_digest(username.encode(), ADMIN_USERNAME.encode()) and password_ok):
+        record_login_failure(cur, keys)
+        db.commit()
+        return jsonify({"error": "invalid username or password"}), 401
+
+    cur.execute("DELETE FROM login_failures WHERE key = %s", (keys[0],))
+    db.commit()
     token = jwt.encode(
         {
             "sub": username,
@@ -84,7 +182,23 @@ def login():
         SECRET_KEY,
         algorithm="HS256",
     )
-    return jsonify({"token": token})
+    response = jsonify({"username": username})  # the token itself only goes in the cookie
+    set_session_cookie(response, token)
+    return response
+
+
+@app.route("/api/session", methods=["GET"])
+@require_auth
+def current_session():
+    """Lets the frontend ask "am I signed in?" — it can't read the HttpOnly cookie."""
+    return jsonify({"username": g.user_id})
+
+
+@app.route("/api/logout", methods=["POST"])
+def logout():
+    response = jsonify({"ok": True})
+    response.delete_cookie(SESSION_COOKIE, path="/api", secure=COOKIE_SECURE, httponly=True, samesite="Strict")
+    return response
 
 
 # ---------- DB setup ----------

@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import {
   API_BASE,
+  CSRF_HEADERS,
   EUR_TO_MKD_RATE,
   Money,
   errorMessageFrom,
@@ -23,7 +24,9 @@ import { useReminders } from "./reminders.js";
 
 const COLORS = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA", "#F87171", "#4ADE80"];
 
-const TOKEN_KEY = "finance_tracker_token";
+// Older builds kept the login token here. It now lives only in an HttpOnly
+// cookie; this key is just cleared on startup so no stale token lingers.
+const LEGACY_TOKEN_KEY = "finance_tracker_token";
 
 function currentMonthString() {
   return localDateString().slice(0, 7);
@@ -53,15 +56,19 @@ function LoginForm({ onLogin }) {
     try {
       const res = await fetch(`${API_BASE}/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...CSRF_HEADERS },
         body: JSON.stringify({ username, password }),
       });
+      if (res.status === 429) {
+        setError(await errorMessageFrom(res, "Too many failed sign-in attempts. Try again later."));
+        return;
+      }
       if (!res.ok) {
         setError("Invalid username or password.");
         return;
       }
-      const { token } = await res.json();
-      onLogin(token);
+      onLogin();
     } catch (e) {
       setError("Can't reach the server.");
     } finally {
@@ -397,11 +404,11 @@ function SpendingTab({ authFetch, refreshKey }) {
               <div className="stat-label">{viewMode === "all" ? "Earned" : "Earned this month"}</div>
               <div className="stat-value earn"><Money value={summary.earned} /></div>
             </div>
-            <div className="stat-card">
-              <div className="stat-label">Net</div>
-              <div className={`stat-value ${net >= 0 ? "earn" : "spend"}`}>
-                {net >= 0 ? "+" : ""}<Money value={net} />
-              </div>
+          </div>
+          <div className="stat-card stat-card-wide">
+            <div className="stat-label">Net</div>
+            <div className={`stat-value ${net >= 0 ? "earn" : "spend"}`}>
+              {net >= 0 ? "+" : ""}<Money value={net} />
             </div>
           </div>
 
@@ -670,24 +677,41 @@ function InvestingTab({ authFetch }) {
 
 export default function App() {
   const [tab, setTab] = useState("spending");
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
+  // "checking" until /api/session answers; the HttpOnly cookie itself is unreadable here.
+  const [auth, setAuth] = useState("checking"); // "checking" | "signed-in" | "signed-out"
 
-  function handleLogin(newToken) {
-    localStorage.setItem(TOKEN_KEY, newToken);
-    setToken(newToken);
-  }
+  const handleSessionEnded = useCallback(() => setAuth("signed-out"), []);
 
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
-    setToken(null);
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_TOKEN_KEY);
+    } catch {
+      // storage unavailable: nothing to clean up
+    }
+    fetch(`${API_BASE}/session`, { credentials: "same-origin", headers: CSRF_HEADERS })
+      .then((res) => setAuth(res.ok ? "signed-in" : "signed-out"))
+      .catch(() => setAuth("signed-out"));
   }, []);
 
-  // Stable per token, so re-rendering App doesn't make every tab refetch.
-  const authFetch = useMemo(() => (token ? makeAuthFetch(token, handleLogout) : null), [token, handleLogout]);
+  async function handleLogout() {
+    try {
+      await fetch(`${API_BASE}/logout`, { method: "POST", credentials: "same-origin", headers: CSRF_HEADERS });
+    } catch {
+      // offline: the cookie stays, but we still drop to the sign-in screen
+    }
+    setAuth("signed-out");
+  }
+
+  // Stable per session, so re-rendering App doesn't make every tab refetch.
+  const authFetch = useMemo(
+    () => (auth === "signed-in" ? makeAuthFetch(handleSessionEnded) : null),
+    [auth, handleSessionEnded]
+  );
   const { reminders, refresh: refreshReminders } = useReminders(authFetch);
   const [spendingVersion, setSpendingVersion] = useState(0);
 
-  if (!token) return <LoginForm onLogin={handleLogin} />;
+  if (auth === "checking") return <div className="app" aria-busy="true" />;
+  if (auth === "signed-out") return <LoginForm onLogin={() => setAuth("signed-in")} />;
 
   const tabs = [
     ["spending", "Spending"],
