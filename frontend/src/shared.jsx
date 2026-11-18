@@ -5,7 +5,13 @@
 // Render rewrite proxies /api/* to the Flask service, and locally Vite's dev
 // server does the same (vite.config.js). Same-origin is what lets the login
 // cookie be HttpOnly + SameSite=Strict (Safari blocks third-party cookies).
-export const API_BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/+$/, "");
+//
+// VITE_API_BASE may only override this with a same-site path (e.g. "/api").
+// A full URL to another host (the old setup) would make the cookie
+// third-party: login "works", the browser drops the cookie, and you get
+// signed straight back out. So absolute URLs are ignored.
+const configuredBase = import.meta.env.VITE_API_BASE || "";
+export const API_BASE = (configuredBase.startsWith("/") ? configuredBase : "/api").replace(/\/+$/, "");
 
 // Sent on every API call; the backend refuses cookie-authenticated writes
 // without it (CSRF protection).

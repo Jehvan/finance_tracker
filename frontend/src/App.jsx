@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
-  Cell,
   Tooltip,
   ResponsiveContainer,
   BarChart,
@@ -22,7 +21,9 @@ import SubscriptionsTab from "./Subscriptions.jsx";
 import DueBanner from "./DueBanner.jsx";
 import { useReminders } from "./reminders.js";
 
-const COLORS = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA", "#F87171", "#4ADE80"];
+// Recharts writes these as SVG attributes, where CSS variables aren't
+// reliable, so the chart's palette is mirrored here from index.css.
+const CHART = { bar: "#F2789F", grid: "#3A2E46", muted: "#A597B2", text: "#F3EDF5", card: "#271D31" };
 
 // Older builds kept the login token here. It now lives only in an HttpOnly
 // cookie; this key is just cleared on startup so no stale token lingers.
@@ -68,6 +69,15 @@ function LoginForm({ onLogin }) {
         setError("Invalid username or password.");
         return;
       }
+      // The password was right; check the browser actually kept the session
+      // cookie before showing the app, instead of bouncing back to sign-in.
+      const check = await fetch(`${API_BASE}/session`, { credentials: "same-origin", headers: CSRF_HEADERS });
+      if (!check.ok) {
+        setError(
+          "Signed in, but this browser didn't keep the session. The site must reach the API on its own address (/api)."
+        );
+        return;
+      }
       onLogin();
     } catch (e) {
       setError("Can't reach the server.");
@@ -77,11 +87,12 @@ function LoginForm({ onLogin }) {
   }
 
   return (
-    <div className="app">
+    <div className="app app-login">
       <header className="app-header">
-        <h1>Finance Tracker</h1>
+        <h1 className="wordmark">Finance</h1>
       </header>
       <main className="tab-content">
+        <p className="login-intro">Sign in to see your spending and holdings.</p>
         <form className="quick-add" onSubmit={handleSubmit}>
           <input
             type="text"
@@ -103,7 +114,7 @@ function LoginForm({ onLogin }) {
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
-        {error && <div className="empty-state">{error}</div>}
+        {error && <div className="form-error">{error}</div>}
       </main>
     </div>
   );
@@ -306,10 +317,73 @@ function SpendingTab({ authFetch, refreshKey }) {
 
   return (
     <div className="tab-content">
+      <section className="hero" aria-live="polite">
+        <div className="range-bar">
+          {viewMode === "month" ? (
+            <>
+              <button className="range-nav" onClick={() => setMonth((m) => shiftMonth(m, -1))} aria-label="Previous month">
+                ‹
+              </button>
+              <span className="range-label">{formatMonth(month)}</span>
+              <button
+                className="range-nav"
+                onClick={() => setMonth((m) => shiftMonth(m, 1))}
+                disabled={month >= currentMonthString()}
+                aria-label="Next month"
+              >
+                ›
+              </button>
+            </>
+          ) : (
+            <span className="range-label">All time</span>
+          )}
+          <button
+            className="range-toggle"
+            onClick={() => setViewMode((v) => (v === "month" ? "all" : "month"))}
+          >
+            {viewMode === "month" ? "All time" : "By month"}
+          </button>
+        </div>
+        {!loadError && (
+          <>
+            <div className="hero-label">{viewMode === "all" ? "Net, all time" : "Net this month"}</div>
+            <div className={`hero-value ${net >= 0 ? "earn" : "spend"}`}>
+              {net >= 0 ? "+" : ""}<Money value={net} />
+              <span className="hero-unit">MKD</span>
+            </div>
+            <dl className="hero-split">
+              <div>
+                <dt>Spent</dt>
+                <dd className="spend"><Money value={summary.spent} /></dd>
+              </div>
+              <div>
+                <dt>Earned</dt>
+                <dd className="earn"><Money value={summary.earned} /></dd>
+              </div>
+            </dl>
+          </>
+        )}
+      </section>
+
       <form className="quick-add" onSubmit={handleAdd}>
+        <div className="segmented" role="radiogroup" aria-label="Type">
+          {["expense", "income"].map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="radio"
+              aria-checked={form.type === t}
+              className={form.type === t ? `on ${t}` : ""}
+              onClick={() => setForm({ ...form, type: t })}
+            >
+              {t === "expense" ? "Expense" : "Income"}
+            </button>
+          ))}
+        </div>
         <div className="amount-field">
           <input
             type="number"
+            inputMode="decimal"
             step="0.01"
             min="0.01"
             placeholder="Amount"
@@ -346,43 +420,11 @@ function SpendingTab({ authFetch, refreshKey }) {
           onChange={(v) => setForm({ ...form, note: v })}
           options={allNotes}
         />
-        <select
-          value={form.type}
-          onChange={(e) => setForm({ ...form, type: e.target.value })}
-        >
-          <option value="expense">Expense</option>
-          <option value="income">Income</option>
-        </select>
-        <button type="submit">Add</button>
+        <button type="submit" className="primary-btn">
+          {form.type === "expense" ? "Add expense" : "Add income"}
+        </button>
       </form>
       {formError && <div className="form-error">{formError}</div>}
-
-      <div className="range-bar">
-        {viewMode === "month" ? (
-          <>
-            <button className="range-nav" onClick={() => setMonth((m) => shiftMonth(m, -1))} aria-label="Previous month">
-              ‹
-            </button>
-            <span className="range-label">{formatMonth(month)}</span>
-            <button
-              className="range-nav"
-              onClick={() => setMonth((m) => shiftMonth(m, 1))}
-              disabled={month >= currentMonthString()}
-              aria-label="Next month"
-            >
-              ›
-            </button>
-          </>
-        ) : (
-          <span className="range-label">All time</span>
-        )}
-        <button
-          className="range-toggle"
-          onClick={() => setViewMode((v) => (v === "month" ? "all" : "month"))}
-        >
-          {viewMode === "month" ? "View all time" : "View by month"}
-        </button>
-      </div>
 
       {loadError ? (
         <div className="empty-state">
@@ -395,27 +437,10 @@ function SpendingTab({ authFetch, refreshKey }) {
         </div>
       ) : (
         <>
-          <div className="summary-row">
-            <div className="stat-card">
-              <div className="stat-label">{viewMode === "all" ? "Spent" : "Spent this month"}</div>
-              <div className="stat-value spend"><Money value={summary.spent} /></div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">{viewMode === "all" ? "Earned" : "Earned this month"}</div>
-              <div className="stat-value earn"><Money value={summary.earned} /></div>
-            </div>
-          </div>
-          <div className="stat-card stat-card-wide">
-            <div className="stat-label">Net</div>
-            <div className={`stat-value ${net >= 0 ? "earn" : "spend"}`}>
-              {net >= 0 ? "+" : ""}<Money value={net} />
-            </div>
-          </div>
-
           {summary.by_category.length > 0 && (
             <>
               <div className="category-filter">
-                <span className="section-title">By category</span>
+                <h3 className="section-title">Spending by category</h3>
                 <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
                   <option value="">All categories</option>
                   {summary.by_category.map((c) => (
@@ -439,18 +464,17 @@ function SpendingTab({ authFetch, refreshKey }) {
                 <div className="chart-wrap">
                   <ResponsiveContainer width="100%" height={Math.max(160, summary.by_category.length * 40)}>
                     <BarChart data={summary.by_category} layout="vertical" margin={{ top: 8, right: 24, bottom: 8, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                      <XAxis type="number" tick={{ fill: "var(--muted)", fontSize: 11 }} />
-                      <YAxis type="category" dataKey="category" width={90} tick={{ fill: "var(--text)", fontSize: 12 }} />
+                      <CartesianGrid stroke={CHART.grid} horizontal={false} />
+                      <XAxis type="number" tick={{ fill: CHART.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="category" width={96} tick={{ fill: CHART.text, fontSize: 12 }} axisLine={false} tickLine={false} />
                       <Tooltip
                         formatter={(v) => v.toFixed(2)}
-                        contentStyle={{ background: "var(--card)", border: "1px solid var(--border)" }}
+                        cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                        contentStyle={{ background: CHART.card, border: `1px solid ${CHART.grid}`, borderRadius: 10, color: CHART.text }}
+                        itemStyle={{ color: CHART.text }}
+                        labelStyle={{ color: CHART.muted }}
                       />
-                      <Bar dataKey="total" radius={[0, 4, 4, 0]}>
-                        {summary.by_category.map((_, i) => (
-                          <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                        ))}
-                      </Bar>
+                      <Bar dataKey="total" fill={CHART.bar} radius={[0, 6, 6, 0]} barSize={18} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -488,14 +512,16 @@ function SpendingTab({ authFetch, refreshKey }) {
               {transactions.map((tx) => (
                 <li key={tx.id} className="tx-row">
                   <div className="tx-main">
-                    <span className={`tx-amount ${tx.type}`}>
-                      {tx.type === "expense" ? "-" : "+"}<Money value={tx.amount} />
-                    </span>
                     <span className="tx-category">{tx.category}</span>
                     {tx.note && <span className="tx-note">{tx.note}</span>}
                   </div>
                   <div className="tx-side">
-                    <span className="tx-date">{tx.date}</span>
+                    <div className="tx-figures">
+                      <span className={`tx-amount ${tx.type}`}>
+                        {tx.type === "expense" ? "−" : "+"}<Money value={tx.amount} />
+                      </span>
+                      <span className="tx-date">{tx.date}</span>
+                    </div>
                     <button className="delete-btn" onClick={() => handleDelete(tx.id)} aria-label="Delete">
                       ✕
                     </button>
@@ -578,6 +604,27 @@ function InvestingTab({ authFetch }) {
 
   return (
     <div className="tab-content">
+      {!loadError && (
+        <section className="hero" aria-live="polite">
+          <div className="hero-label">Portfolio value</div>
+          <div className="hero-value">
+            <Money value={totalValue} />
+          </div>
+          <dl className="hero-split">
+            <div>
+              <dt>Gain / loss</dt>
+              <dd className={totalGain >= 0 ? "earn" : "spend"}>
+                {totalGain >= 0 ? "+" : ""}<Money value={totalGain} />
+              </dd>
+            </div>
+            <div>
+              <dt>Cost</dt>
+              <dd><Money value={totalCost} /></dd>
+            </div>
+          </dl>
+        </section>
+      )}
+
       <form className="quick-add" onSubmit={handleAdd}>
         <input
           type="text"
@@ -595,6 +642,7 @@ function InvestingTab({ authFetch }) {
         </select>
         <input
           type="number"
+          inputMode="decimal"
           step="any"
           min="0.00000001"
           placeholder="Quantity"
@@ -606,12 +654,13 @@ function InvestingTab({ authFetch }) {
           type="number"
           step="0.01"
           min="0.01"
+          inputMode="decimal"
           placeholder="Avg buy price"
           value={form.avg_buy_price}
           onChange={(e) => setForm({ ...form, avg_buy_price: e.target.value })}
           required
         />
-        <button type="submit">Add</button>
+        <button type="submit" className="primary-btn">Add holding</button>
       </form>
       {formError && <div className="form-error">{formError}</div>}
 
@@ -626,20 +675,8 @@ function InvestingTab({ authFetch }) {
         </div>
       ) : (
         <>
-          <div className="summary-row">
-            <div className="stat-card">
-              <div className="stat-label">Portfolio value</div>
-              <div className="stat-value"><Money value={totalValue} /></div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Gain / loss</div>
-              <div className={`stat-value ${totalGain >= 0 ? "earn" : "spend"}`}>
-                {totalGain >= 0 ? "+" : ""}<Money value={totalGain} />
-              </div>
-            </div>
-          </div>
           {unpricedCount > 0 && (
-            <div className="form-error">
+            <div className="notice">
               {unpricedCount} holding{unpricedCount > 1 ? "s" : ""} missing price data — excluded from totals above.
             </div>
           )}
@@ -655,12 +692,14 @@ function InvestingTab({ authFetch }) {
                 <li key={h.id} className="tx-row">
                   <div className="tx-main">
                     <span className="tx-category">{h.symbol.toUpperCase()}</span>
-                    <span className="tx-note">{h.quantity} @ avg <Money value={h.avg_buy_price} /></span>
+                    <span className="tx-note">{h.quantity} at avg <Money value={h.avg_buy_price} /></span>
                   </div>
                   <div className="tx-side">
-                    <span className={`tx-amount ${h.gain_loss >= 0 ? "income" : "expense"}`}>
-                      {h.current_value != null ? <><Money value={h.current_value} /></> : "price unavailable"}
-                    </span>
+                    <div className="tx-figures">
+                      <span className={`tx-amount ${h.current_value == null ? "unpriced" : h.gain_loss >= 0 ? "income" : "expense"}`}>
+                        {h.current_value != null ? <Money value={h.current_value} /> : "No price"}
+                      </span>
+                    </div>
                     <button className="delete-btn" onClick={() => handleDelete(h.id)} aria-label="Delete">
                       ✕
                     </button>
@@ -674,6 +713,12 @@ function InvestingTab({ authFetch }) {
     </div>
   );
 }
+
+const TABS = [
+  ["spending", "Spending"],
+  ["investing", "Investing"],
+  ["bills", "Bills"],
+];
 
 export default function App() {
   const [tab, setTab] = useState("spending");
@@ -710,61 +755,54 @@ export default function App() {
   const { reminders, refresh: refreshReminders } = useReminders(authFetch);
   const [spendingVersion, setSpendingVersion] = useState(0);
 
-  if (auth === "checking") return <div className="app" aria-busy="true" />;
+  if (auth === "checking") return <div className="app app-login" aria-busy="true" />;
   if (auth === "signed-out") return <LoginForm onLogin={() => setAuth("signed-in")} />;
-
-  const tabs = [
-    ["spending", "Spending"],
-    ["investing", "Investing"],
-    ["bills", "Bills"],
-  ];
 
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Finance Tracker</h1>
-        <nav className="tabs">
-          {tabs.map(([id, label]) => {
-            const badge = id === "bills" ? reminders.needsAttention.length : 0;
-            return (
-              <button
-                key={id}
-                className={tab === id ? "active" : ""}
-                onClick={() => setTab(id)}
-                aria-label={badge ? `${label}, ${badge} need${badge === 1 ? "s" : ""} attention` : undefined}
-              >
-                {label}
-                {badge > 0 && (
-                  <span className={`nav-badge ${reminders.overdueCount > 0 ? "overdue" : ""}`} aria-hidden="true">
-                    {badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          <button onClick={handleLogout}>Log out</button>
-        </nav>
+        <h1 className="wordmark">{TABS.find(([id]) => id === tab)[1]}</h1>
+        <button className="logout-btn" onClick={handleLogout}>Log out</button>
       </header>
       <main>
         {tab === "spending" && (
           <>
-            <div className="banner-wrap">
-              <DueBanner
-                authFetch={authFetch}
-                items={reminders.dueThisWeek}
-                onPaid={() => {
-                  refreshReminders();
-                  setSpendingVersion((v) => v + 1);
-                }}
-                onOpenBills={() => setTab("bills")}
-              />
-            </div>
+            <DueBanner
+              authFetch={authFetch}
+              items={reminders.dueThisWeek}
+              onPaid={() => {
+                refreshReminders();
+                setSpendingVersion((v) => v + 1);
+              }}
+              onOpenBills={() => setTab("bills")}
+            />
             <SpendingTab authFetch={authFetch} refreshKey={spendingVersion} />
           </>
         )}
         {tab === "investing" && <InvestingTab authFetch={authFetch} />}
         {tab === "bills" && <SubscriptionsTab authFetch={authFetch} onChanged={refreshReminders} />}
       </main>
+      <nav className="tabs" aria-label="Sections">
+        {TABS.map(([id, label]) => {
+          const badge = id === "bills" ? reminders.needsAttention.length : 0;
+          return (
+            <button
+              key={id}
+              className={tab === id ? "active" : ""}
+              aria-current={tab === id ? "page" : undefined}
+              aria-label={badge ? `${label}, ${badge} need${badge === 1 ? "s" : ""} attention` : undefined}
+              onClick={() => setTab(id)}
+            >
+              {label}
+              {badge > 0 && (
+                <span className={`nav-badge ${reminders.overdueCount > 0 ? "overdue" : ""}`} aria-hidden="true">
+                  {badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }

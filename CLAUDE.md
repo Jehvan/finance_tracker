@@ -30,7 +30,9 @@ API tests TRUNCATE tables: `TEST_DATABASE_URL` must be a throwaway local DB, nev
   normalization, validation). No Flask or DB imports, so keep new logic there.
 - `backend/migrations/NNN_name.sql`: schema changes. Must be idempotent (`IF NOT EXISTS`);
   `init_db()` applies all of them on every startup, and they can be pasted into Supabase.
-- `frontend/src/App.jsx`: tabs (Spending, Investing, Bills) and the login. `shared.jsx` holds
+- `frontend/src/App.jsx`: tabs (Spending, Investing, Bills; bottom tab bar) and the login. Visual
+  design is the aubergine/gold/rose theme in `index.css` (tokens on `:root`; gold = money in /
+  primary action, rose = money out / overdue; Unbounded for figures, Golos Text for UI). `shared.jsx` holds
   `API_BASE`, `authFetch`, `Money` and date helpers; `recurringApi.js` holds bill API calls;
   `reminders.js` holds reminder logic (phase 2 web-push plan is documented there).
 
@@ -50,7 +52,9 @@ API tests TRUNCATE tables: `TEST_DATABASE_URL` must be a throwaway local DB, nev
 - All tables have RLS enabled with no policies. The app connects as table owner (bypasses RLS);
   this only blocks Supabase's public REST API. Don't add policies or `FORCE` RLS.
 - The API must stay same-origin with the frontend (`/api`: Render rewrite in `render.yaml`, Vite
-  proxy locally). A cross-origin API would make the cookie third-party, which Safari/iOS blocks.
+  proxy locally). A cross-origin API would make the cookie third-party, which Safari/iOS blocks
+  (symptom: login succeeds, then you're bounced straight back to sign-in). `shared.jsx` therefore
+  ignores any absolute `VITE_API_BASE`.
   Never store the token in localStorage. Cookie-authenticated writes need the
   `X-Requested-With` header (`CSRF_HEADERS` in shared.jsx); the backend returns 403 without it.
 - The frontend never talks to Supabase and must never receive Supabase credentials

@@ -264,8 +264,6 @@ export default function SubscriptionsTab({ authFetch, onChanged }) {
 
   return (
     <div className="tab-content">
-      <h2 className="bills-heading">Subscriptions &amp; bills</h2>
-
       {loadError ? (
         <div className="empty-state">
           {loadError}
@@ -277,27 +275,30 @@ export default function SubscriptionsTab({ authFetch, onChanged }) {
         <>
           {summary && summary.active_count > 0 && (
             <>
-              <div className="summary-row bill-summary">
-                <div className="stat-card">
-                  <div className="stat-label">Per month</div>
-                  <div className="stat-value"><Money value={summary.monthly_total} decimals={0} /> <span className="bill-currency">MKD</span></div>
+              <section className="hero" aria-label="Bill totals">
+                <div className="hero-label">Bills per month</div>
+                <div className="hero-value">
+                  <Money value={summary.monthly_total} decimals={0} />
+                  <span className="hero-unit">MKD</span>
                 </div>
-                <div className="stat-card">
-                  <div className="stat-label">Per year</div>
-                  <div className="stat-value"><Money value={summary.yearly_total} decimals={0} /> <span className="bill-currency">MKD</span></div>
-                </div>
-              </div>
-              {summary.most_expensive && (
-                <div className="stat-card bill-top-cost">
+                <dl className="hero-split">
                   <div>
-                    <div className="stat-label">Most expensive</div>
-                    <div className="bill-name">{summary.most_expensive.name}</div>
+                    <dt>Per year</dt>
+                    <dd><Money value={summary.yearly_total} decimals={0} /></dd>
                   </div>
-                  <div className="bill-top-cost-value">
-                    <Money value={summary.most_expensive.monthly_in_base} decimals={0} /> <span className="bill-currency">MKD a month</span>
-                  </div>
-                </div>
-              )}
+                  {summary.most_expensive && (
+                    <div>
+                      <dt>Most expensive</dt>
+                      <dd className="bill-hero-top">
+                        <span className="bill-hero-top-name">{summary.most_expensive.name}</span>
+                        <span className="bill-hero-top-cost">
+                          <Money value={summary.most_expensive.monthly_in_base} decimals={0} /> a month
+                        </span>
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </section>
               <p className="bills-footnote">
                 {eur
                   ? <>Includes <Money value={eur.monthly} /> EUR a month, counted at {summary.eur_to_mkd_rate} MKD per euro.</>
