@@ -9,33 +9,24 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-
-// In production (Render), set VITE_API_BASE to your backend's Render URL,
-// e.g. https://finance-tracker-api.onrender.com/api
-// Locally, it falls back to whatever host you loaded the page from,
-// so it works whether you open it via localhost or your LAN IP.
-const API_BASE = (
-  import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:5000/api`
-).replace(/\/+$/, "");
+import {
+  API_BASE,
+  CSRF_HEADERS,
+  EUR_TO_MKD_RATE,
+  Money,
+  errorMessageFrom,
+  localDateString,
+  makeAuthFetch,
+} from "./shared.jsx";
+import SubscriptionsTab from "./Subscriptions.jsx";
+import DueBanner from "./DueBanner.jsx";
+import { useReminders } from "./reminders.js";
 
 const COLORS = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA", "#F87171", "#4ADE80"];
 
-const TOKEN_KEY = "finance_tracker_token";
-
-// The denar is pegged to the euro by the National Bank of the Republic of
-// North Macedonia at a fixed rate (has held ~61.5 since 1997), so a static
-// conversion is appropriate here rather than fetching a live FX rate.
-const EUR_TO_MKD_RATE = 61.5;
-
-// All date/month logic uses the device's local time, not UTC — otherwise a
-// transaction added in the evening (US timezones) or just after midnight
-// (timezones ahead of UTC) can land on the wrong day/month.
-function localDateString(d = new Date()) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+// Older builds kept the login token here. It now lives only in an HttpOnly
+// cookie; this key is just cleared on startup so no stale token lingers.
+const LEGACY_TOKEN_KEY = "finance_tracker_token";
 
 function currentMonthString() {
   return localDateString().slice(0, 7);
@@ -65,15 +56,19 @@ function LoginForm({ onLogin }) {
     try {
       const res = await fetch(`${API_BASE}/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...CSRF_HEADERS },
         body: JSON.stringify({ username, password }),
       });
+      if (res.status === 429) {
+        setError(await errorMessageFrom(res, "Too many failed sign-in attempts. Try again later."));
+        return;
+      }
       if (!res.ok) {
         setError("Invalid username or password.");
         return;
       }
-      const { token } = await res.json();
-      onLogin(token);
+      onLogin();
     } catch (e) {
       setError("Can't reach the server.");
     } finally {
@@ -112,11 +107,6 @@ function LoginForm({ onLogin }) {
       </main>
     </div>
   );
-}
-
-function Money({ value }) {
-  const n = Number(value ?? 0);
-  return <span>{n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
 }
 
 // Custom dropdown instead of <datalist> — native datalist support/appearance
@@ -202,30 +192,7 @@ function TypeaheadInput({ id, value, onChange, options, placeholder, required })
   );
 }
 
-function makeAuthFetch(token, onUnauthorized) {
-  return async function authFetch(url, options = {}) {
-    const res = await fetch(url, {
-      ...options,
-      headers: { ...options.headers, Authorization: `Bearer ${token}` },
-    });
-    if (res.status === 401) {
-      onUnauthorized();
-      throw new Error("unauthorized");
-    }
-    return res;
-  };
-}
-
-async function errorMessageFrom(res, fallback) {
-  try {
-    const data = await res.json();
-    return data.error || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function SpendingTab({ authFetch }) {
+function SpendingTab({ authFetch, refreshKey }) {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({ by_category: [], income_by_category: [], spent: 0, earned: 0 });
   const [allCategories, setAllCategories] = useState([]);
@@ -262,7 +229,7 @@ function SpendingTab({ authFetch }) {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [authFetch, viewMode, month]);
+  }, [authFetch, viewMode, month, refreshKey]); // refreshKey: reload after a bill is marked paid elsewhere
 
   const loadCategories = useCallback(async () => {
     try {
@@ -437,11 +404,11 @@ function SpendingTab({ authFetch }) {
               <div className="stat-label">{viewMode === "all" ? "Earned" : "Earned this month"}</div>
               <div className="stat-value earn"><Money value={summary.earned} /></div>
             </div>
-            <div className="stat-card">
-              <div className="stat-label">Net</div>
-              <div className={`stat-value ${net >= 0 ? "earn" : "spend"}`}>
-                {net >= 0 ? "+" : ""}<Money value={net} />
-              </div>
+          </div>
+          <div className="stat-card stat-card-wide">
+            <div className="stat-label">Net</div>
+            <div className={`stat-value ${net >= 0 ? "earn" : "spend"}`}>
+              {net >= 0 ? "+" : ""}<Money value={net} />
             </div>
           </div>
 
@@ -710,44 +677,93 @@ function InvestingTab({ authFetch }) {
 
 export default function App() {
   const [tab, setTab] = useState("spending");
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
+  // "checking" until /api/session answers; the HttpOnly cookie itself is unreadable here.
+  const [auth, setAuth] = useState("checking"); // "checking" | "signed-in" | "signed-out"
 
-  function handleLogin(newToken) {
-    localStorage.setItem(TOKEN_KEY, newToken);
-    setToken(newToken);
+  const handleSessionEnded = useCallback(() => setAuth("signed-out"), []);
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_TOKEN_KEY);
+    } catch {
+      // storage unavailable: nothing to clean up
+    }
+    fetch(`${API_BASE}/session`, { credentials: "same-origin", headers: CSRF_HEADERS })
+      .then((res) => setAuth(res.ok ? "signed-in" : "signed-out"))
+      .catch(() => setAuth("signed-out"));
+  }, []);
+
+  async function handleLogout() {
+    try {
+      await fetch(`${API_BASE}/logout`, { method: "POST", credentials: "same-origin", headers: CSRF_HEADERS });
+    } catch {
+      // offline: the cookie stays, but we still drop to the sign-in screen
+    }
+    setAuth("signed-out");
   }
 
-  function handleLogout() {
-    localStorage.removeItem(TOKEN_KEY);
-    setToken(null);
-  }
+  // Stable per session, so re-rendering App doesn't make every tab refetch.
+  const authFetch = useMemo(
+    () => (auth === "signed-in" ? makeAuthFetch(handleSessionEnded) : null),
+    [auth, handleSessionEnded]
+  );
+  const { reminders, refresh: refreshReminders } = useReminders(authFetch);
+  const [spendingVersion, setSpendingVersion] = useState(0);
 
-  if (!token) return <LoginForm onLogin={handleLogin} />;
+  if (auth === "checking") return <div className="app" aria-busy="true" />;
+  if (auth === "signed-out") return <LoginForm onLogin={() => setAuth("signed-in")} />;
 
-  const authFetch = makeAuthFetch(token, handleLogout);
+  const tabs = [
+    ["spending", "Spending"],
+    ["investing", "Investing"],
+    ["bills", "Bills"],
+  ];
 
   return (
     <div className="app">
       <header className="app-header">
         <h1>Finance Tracker</h1>
         <nav className="tabs">
-          <button
-            className={tab === "spending" ? "active" : ""}
-            onClick={() => setTab("spending")}
-          >
-            Spending
-          </button>
-          <button
-            className={tab === "investing" ? "active" : ""}
-            onClick={() => setTab("investing")}
-          >
-            Investing
-          </button>
+          {tabs.map(([id, label]) => {
+            const badge = id === "bills" ? reminders.needsAttention.length : 0;
+            return (
+              <button
+                key={id}
+                className={tab === id ? "active" : ""}
+                onClick={() => setTab(id)}
+                aria-label={badge ? `${label}, ${badge} need${badge === 1 ? "s" : ""} attention` : undefined}
+              >
+                {label}
+                {badge > 0 && (
+                  <span className={`nav-badge ${reminders.overdueCount > 0 ? "overdue" : ""}`} aria-hidden="true">
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
           <button onClick={handleLogout}>Log out</button>
         </nav>
       </header>
       <main>
-        {tab === "spending" ? <SpendingTab authFetch={authFetch} /> : <InvestingTab authFetch={authFetch} />}
+        {tab === "spending" && (
+          <>
+            <div className="banner-wrap">
+              <DueBanner
+                authFetch={authFetch}
+                items={reminders.dueThisWeek}
+                onPaid={() => {
+                  refreshReminders();
+                  setSpendingVersion((v) => v + 1);
+                }}
+                onOpenBills={() => setTab("bills")}
+              />
+            </div>
+            <SpendingTab authFetch={authFetch} refreshKey={spendingVersion} />
+          </>
+        )}
+        {tab === "investing" && <InvestingTab authFetch={authFetch} />}
+        {tab === "bills" && <SubscriptionsTab authFetch={authFetch} onChanged={refreshReminders} />}
       </main>
     </div>
   );

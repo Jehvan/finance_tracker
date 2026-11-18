@@ -39,5 +39,10 @@ export default defineConfig({
   server: {
     host: "0.0.0.0", // reachable from your phone on the same WiFi
     port: 5173,
+    // Same-origin API in dev too (production uses a Render rewrite), so the
+    // HttpOnly session cookie works exactly as it does when deployed.
+    proxy: {
+      "/api": process.env.API_PROXY_TARGET || "http://localhost:5000",
+    },
   },
 });
