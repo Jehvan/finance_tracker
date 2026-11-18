@@ -106,6 +106,22 @@ def ensure_numeric_column(cur, table, column):
         cur.execute(f"ALTER TABLE {table} ALTER COLUMN {column} TYPE NUMERIC(12,2)")
 
 
+MIGRATIONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "migrations")
+
+
+def run_migrations(cur):
+    """Apply every idempotent .sql file in migrations/, in filename order.
+
+    Each file is written to be safely re-runnable (IF NOT EXISTS everywhere),
+    so applying them on every startup is cheap and needs no tracking table.
+    The same files can be pasted into the Supabase SQL editor by hand.
+    """
+    for name in sorted(os.listdir(MIGRATIONS_DIR)):
+        if name.endswith(".sql"):
+            with open(os.path.join(MIGRATIONS_DIR, name), encoding="utf-8") as f:
+                cur.execute(f.read())
+
+
 def init_db():
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
@@ -140,6 +156,7 @@ def init_db():
     ensure_numeric_column(cur, "holdings", "quantity")
     ensure_numeric_column(cur, "holdings", "avg_buy_price")
     ensure_numeric_column(cur, "price_cache", "price")
+    run_migrations(cur)
     conn.commit()
     cur.close()
     conn.close()
