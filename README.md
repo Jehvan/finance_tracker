@@ -99,8 +99,9 @@ Push notifications for bills that are due soon or overdue. One-time setup:
    Bills → "Reminders on this device" → Turn on reminders, then "Send a test".
 
 `.github/workflows/bill-reminders.yml` runs once a day (around 7–8am Skopje time) and the API
-sends each device one notification listing bills that need attention — names and due dates
-only, never amounts. You can also run it from the repo's Actions tab ("Run workflow").
+sends each device one notification listing bills that need attention: a one-time heads-up when
+a bill is 7 days from due (the per-bill "Remind me" setting, default 7), again on the due date,
+and daily while overdue — names and due dates only, never amounts. You can also run it from the repo's Actions tab ("Run workflow").
 
 ## Notes
 

@@ -651,7 +651,7 @@ def not_found():
 
 
 def serialize_recurring(row, today):
-    item = {k: v for k, v in row.items() if k != "user_id"}
+    item = {k: v for k, v in row.items() if k not in ("user_id", "heads_up_sent_for")}
     item["next_due_date"] = row["next_due_date"].isoformat()
     item["created_at"] = row["created_at"].isoformat()
     item["days_until_due"] = (row["next_due_date"] - today).days
@@ -950,7 +950,7 @@ def send_test_push():
     cur.execute("SELECT * FROM push_subscriptions WHERE user_id = %s", (g.user_id,))
     payload = {
         "title": "Bill reminders are on",
-        "body": "You'll get a notification on days a bill is due soon or overdue.",
+        "body": "You'll get a heads-up 7 days before each bill, another on the due date, and daily if it's overdue.",
         "url": "/?tab=bills",
         "tag": "bills-test",
     }
@@ -963,9 +963,11 @@ def send_test_push():
 def run_daily_push():
     """Called once a day by the GitHub Actions workflow (no user session).
 
-    Sends each subscribed device one digest of bills that are overdue or inside
-    their reminder window. Safe to call repeatedly: each device is claimed for
-    today before sending, so retries and overlapping runs never double-send.
+    Sends each subscribed device one digest: a heads-up for bills entering
+    their reminder window (7 days by default, once per due date), bills due
+    today, and overdue bills (see rc.needs_notification). Safe to call
+    repeatedly: each device is claimed for today before sending, so retries and
+    overlapping runs never double-send.
     """
     supplied = request.headers.get("X-Cron-Secret", "")
     if not PUSH_CRON_SECRET or not hmac.compare_digest(supplied.encode(), PUSH_CRON_SECRET.encode()):
@@ -980,11 +982,11 @@ def run_daily_push():
     totals = {"users": 0, "sent": 0, "removed": 0, "failed": 0, "nothing_due": 0}
     for user_id in [r["user_id"] for r in cur.fetchall()]:
         cur.execute(
-            "SELECT name, next_due_date, reminder_days_before, is_active "
+            "SELECT id, name, next_due_date, reminder_days_before, is_active, heads_up_sent_for "
             "FROM recurring_payments WHERE user_id = %s AND is_active",
             (user_id,),
         )
-        digest = rc.build_digest(cur.fetchall(), today)
+        digest, heads_up_ids = rc.build_digest(cur.fetchall(), today)
         # Claim today's send for this user's devices (atomic; a parallel run gets none).
         cur.execute(
             """
@@ -1005,6 +1007,7 @@ def run_daily_push():
         if digest is None:
             totals["nothing_due"] += 1
             continue
+        delivered = False
         for row in claimed:
             result = push.send_notification(row, digest, VAPID, VAPID_SUBJECT)
             if result == "gone":
@@ -1016,6 +1019,15 @@ def run_daily_push():
                 totals["failed"] += 1
             else:
                 totals["sent"] += 1
+                delivered = True
+            db.commit()
+        if delivered and heads_up_ids:
+            # Heads-up done for these due dates; it re-arms when mark-paid moves the date.
+            cur.execute(
+                "UPDATE recurring_payments SET heads_up_sent_for = next_due_date "
+                "WHERE user_id = %s AND id = ANY(%s)",
+                (user_id, heads_up_ids),
+            )
             db.commit()
     return jsonify(totals)
 

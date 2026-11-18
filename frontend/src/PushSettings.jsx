@@ -3,8 +3,8 @@ import { disablePush, enablePush, pushState, sendTestPush } from "./push.js";
 
 const STATE_TEXT = {
   checking: "Checking this device…",
-  on: "On for this device. You'll get one notification on days a bill is due soon or overdue.",
-  off: "Get a notification on days a bill is due soon or overdue.",
+  on: "On for this device. You'll get a heads-up 7 days before a bill is due (or as set per bill), another on the due date, and daily if it's overdue.",
+  off: "Get a heads-up 7 days before each bill is due, another on the due date, and daily if it's overdue.",
   denied: "Notifications are blocked for this app. Allow them in your phone's settings, then come back.",
   "needs-install": "On iPhone, add this app to your Home Screen first (Share, then Add to Home Screen) and open it from there.",
   unsupported: "This browser can't show notifications from the app.",

@@ -12,34 +12,68 @@ from conftest import CRON_SECRET
 TODAY = date(2026, 11, 18)
 
 
-def bill(name, days, reminder=3, active=True):
-    return dict(name=name, next_due_date=TODAY + timedelta(days=days), reminder_days_before=reminder, is_active=active)
+_ids = iter(range(1, 10_000))
 
 
-# ---------- digest (pure) ----------
+def bill(name, days, reminder=7, active=True, heads_up_for=None):
+    due = TODAY + timedelta(days=days)
+    return dict(id=next(_ids), name=name, next_due_date=due, reminder_days_before=reminder,
+                is_active=active, heads_up_sent_for=heads_up_for)
+
+
+# ---------- which bills notify, and the digest text (pure) ----------
+
+
+@pytest.mark.parametrize("days, reminder, heads_up_done, expected", [
+    (7, 7, False, True),    # heads-up a week before
+    (4, 7, False, True),    # bill added late / skipped day: heads-up still comes
+    (4, 7, True, False),    # ...but only once per due date
+    (8, 7, False, False),   # not yet
+    (1, 7, True, False),    # quiet between heads-up and due day
+    (0, 7, True, True),     # due day, always
+    (-3, 7, True, True),    # overdue, daily
+    (2, 0, False, False),   # "on the day" setting: nothing before the due date
+    (0, 0, False, True),
+])
+def test_needs_notification(days, reminder, heads_up_done, expected):
+    b = bill("x", days, reminder)
+    if heads_up_done:
+        b["heads_up_sent_for"] = b["next_due_date"]
+    assert rc.needs_notification(b, TODAY) is expected
+
+
+def test_stale_heads_up_marker_from_previous_cycle_rearms():
+    b = bill("x", 7, heads_up_for=TODAY - timedelta(days=23))  # last month's due date
+    assert rc.needs_notification(b, TODAY) is True
+
+
+def test_paused_never_notifies():
+    assert rc.needs_notification(bill("x", -5, active=False), TODAY) is False
 
 
 def test_digest_none_when_nothing_due():
-    assert rc.build_digest([bill("Rent", 10), bill("Gym", -5, active=False)], TODAY) is None
+    assert rc.build_digest([bill("Rent", 10), bill("Gym", -5, active=False)], TODAY) == (None, [])
 
 
 def test_digest_orders_most_urgent_first_and_has_no_amounts():
-    d = rc.build_digest([bill("Netflix", 2), bill("Electricity", -2), bill("Phone", 0), bill("Rent", 9)], TODAY)
+    netflix, elec, phone, rent = bill("Netflix", 7), bill("Electricity", -2), bill("Phone", 0), bill("Rent", 9)
+    d, heads_up = rc.build_digest([netflix, elec, phone, rent], TODAY)
     assert d["title"] == "3 bills need attention"
-    assert d["body"].split("\n") == ["Electricity: 2 days overdue", "Phone: due today", "Netflix: due in 2 days"]
+    assert d["body"].split("\n") == ["Electricity: 2 days overdue", "Phone: due today", "Netflix: due in 7 days"]
     assert d["url"] == "/?tab=bills" and d["tag"] == "bills-digest"
+    assert heads_up == [netflix["id"]]  # only the advance notice is tracked
 
 
 def test_digest_singular_tomorrow_and_overflow():
-    assert rc.build_digest([bill("Water", 1)], TODAY)["title"] == "1 bill needs attention"
-    assert rc.build_digest([bill("Water", 1)], TODAY)["body"] == "Water: due tomorrow"
-    d = rc.build_digest([bill(f"B{i}", -1) for i in range(5)], TODAY)
+    d, _ = rc.build_digest([bill("Water", 1)], TODAY)
+    assert d["title"] == "1 bill needs attention" and d["body"] == "Water: due tomorrow"
+    d, _ = rc.build_digest([bill(f"B{i}", -1) for i in range(5)], TODAY)
     assert d["body"].splitlines()[-1] == "+2 more"
     assert d["body"].splitlines()[0] == "B0: 1 day overdue"
 
 
 def test_digest_truncates_long_names():
-    d = rc.build_digest([bill("x" * 80, 0)], TODAY)
+    d, _ = rc.build_digest([bill("x" * 80, 0)], TODAY)
     assert d["body"] == "x" * 39 + "…: due today"
 
 
@@ -293,3 +327,61 @@ def test_api_starts_with_a_bad_key(app_module):  # app_module: sets the env the 
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__)))
     assert out.stdout.strip().endswith("ok True"), out.stderr[-500:]
     assert "Push notifications disabled" in out.stderr
+
+
+
+def test_heads_up_once_then_due_day_then_rearmed_after_paying(client, alice, sent, app_module, monkeypatch, db_cursor):
+    today = app_module.app_today()
+    add_bill(client, alice, "Internet", 7, app_module)  # default reminder is now 7 days
+    subscribe(client, alice)
+
+    def run_on(day_offset):
+        monkeypatch.setattr(app_module, "app_today", lambda: today + timedelta(days=day_offset))
+        before = len(sent.calls)
+        run_daily(client)
+        return [p["body"] for _, p in sent.calls[before:]]
+
+    assert run_on(0) == ["Internet: due in 7 days"]   # heads-up a week before
+    assert run_on(1) == []                             # no repeat the next days
+    assert run_on(6) == []
+    assert run_on(7) == ["Internet: due today"]        # due day
+    assert run_on(8) == ["Internet: 1 day overdue"]    # then daily while overdue
+
+    # Paying moves the due date a month on; that cycle gets its own heads-up.
+    monkeypatch.setattr(app_module, "app_today", lambda: today + timedelta(days=8))
+    item = client.get("/api/recurring", headers=alice).get_json()[0]
+    assert client.post(f"/api/recurring/{item['id']}/mark-paid", json={"due_date": item["next_due_date"]},
+                       headers=alice).status_code == 201
+    new_due = date.fromisoformat(client.get("/api/recurring", headers=alice).get_json()[0]["next_due_date"])
+    offset = (new_due - today).days - 7
+    assert run_on(offset) == ["Internet: due in 7 days"]
+
+
+def test_failed_send_keeps_heads_up_for_retry(client, alice, sent, app_module):
+    add_bill(client, alice, "Water", 5, app_module)
+    subscribe(client, alice, "https://fcm.googleapis.com/fcm/send/flaky")
+    sent.results["https://fcm.googleapis.com/fcm/send/flaky"] = "failed"
+    run_daily(client)
+    sent.results["https://fcm.googleapis.com/fcm/send/flaky"] = "sent"
+    run_daily(client)  # retry the same day
+    assert [p["body"] for _, p in sent.calls] == ["Water: due in 5 days"] * 2
+
+
+def test_new_bills_default_to_7_days(client, alice):
+    res = client.post("/api/recurring", headers=alice,
+                      json={"name": "x", "amount": 1, "billing_cycle": "monthly", "next_due_date": "2027-01-01"})
+    assert res.get_json()["reminder_days_before"] == 7
+    assert "heads_up_sent_for" not in res.get_json()  # internal tracking stays server-side
+
+
+def test_existing_3_day_bills_move_to_7_only_once(client, alice, app_module, db_cursor):
+    """Migration 005 bumps old-default bills once; later deliberate 3s are left alone on restart."""
+    item = client.post("/api/recurring", headers=alice, json={
+        "name": "x", "amount": 1, "billing_cycle": "monthly", "next_due_date": "2027-01-01",
+        "reminder_days_before": 3}).get_json()
+    db_cursor.execute("DELETE FROM app_migrations WHERE name = '005_existing_reminders_to_7'")
+    app_module.init_db()  # first deploy with 005: bumps 3 -> 7
+    assert client.get(f"/api/recurring/{item['id']}", headers=alice).get_json()["reminder_days_before"] == 7
+    client.patch(f"/api/recurring/{item['id']}", headers=alice, json={"reminder_days_before": 3})
+    app_module.init_db()  # every later restart: no change
+    assert client.get(f"/api/recurring/{item['id']}", headers=alice).get_json()["reminder_days_before"] == 3

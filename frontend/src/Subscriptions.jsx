@@ -22,7 +22,7 @@ const EMPTY_FORM = {
   next_due_date: "",
   category: "subscription",
   payment_method_label: "",
-  reminder_days_before: "3",
+  reminder_days_before: "7",
   notes: "",
 };
 

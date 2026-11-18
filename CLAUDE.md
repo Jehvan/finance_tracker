@@ -31,9 +31,13 @@ API tests TRUNCATE tables: `TEST_DATABASE_URL` must be a throwaway local DB, nev
 - `backend/push.py`: web push (subscription validation with a push-service host allowlist, VAPID,
   sending without redirects). Routes `/api/push/*` in app.py; `/api/push/run-daily` is called by
   `.github/workflows/bill-reminders.yml` with `X-Cron-Secret` (404 if `PUSH_CRON_SECRET` unset).
-  Push is off unless `VAPID_PRIVATE_KEY` is set. Digest text lives in `rc.build_digest()`.
+  Push is off unless `VAPID_PRIVATE_KEY` is set. Who gets notified is `rc.needs_notification()`
+  (one heads-up at `reminder_days_before`, default 7, tracked per due date in `heads_up_sent_for`;
+  again on the due date; daily while overdue); digest text is `rc.build_digest()`.
 - `backend/migrations/NNN_name.sql`: schema changes. Must be idempotent (`IF NOT EXISTS`);
   `init_db()` applies all of them on every startup, and they can be pasted into Supabase.
+  One-time data changes must be guarded by a row in `app_migrations` (see 005), or they rerun
+  on every restart.
 - `frontend/src/App.jsx`: tabs (Spending, Investing, Bills; bottom tab bar) and the login. Visual
   design is the aubergine/gold/rose theme in `index.css` (tokens on `:root`; gold = money in /
   primary action, rose = money out / overdue; Unbounded for figures, Golos Text for UI). `shared.jsx` holds

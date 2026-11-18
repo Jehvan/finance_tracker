@@ -287,20 +287,42 @@ def _due_phrase(days):
     return f"due in {days} days"
 
 
-def build_digest(items, today):
-    """The daily reminder notification for one user, or None if nothing needs attention.
+def needs_notification(item, today):
+    """Whether a bill belongs in today's push digest.
 
-    `items` are bill rows (name, next_due_date, reminder_days_before, is_active).
-    Lock screens are visible to anyone nearby, so the text names bills and
-    when they're due but never includes amounts.
+    - one heads-up once it's within `reminder_days_before` days (default 7) of
+      the due date: sent once per due date, tracked in `heads_up_sent_for`, so a
+      bill added late or a skipped day still gets it the next morning;
+    - again on the due date itself;
+    - every day while it's overdue.
+    Paused bills never notify.
     """
-    attention = []
+    if not item["is_active"]:
+        return False
+    days = (item["next_due_date"] - today).days
+    if days <= 0:
+        return True
+    return days <= item["reminder_days_before"] and item.get("heads_up_sent_for") != item["next_due_date"]
+
+
+def build_digest(items, today):
+    """The daily reminder notification for one user, plus the ids of bills
+    whose heads-up it carries: (payload, heads_up_ids), or (None, []) when
+    nothing needs a notification today.
+
+    `items` are bill rows (id, name, next_due_date, reminder_days_before,
+    is_active, heads_up_sent_for). Lock screens are visible to anyone nearby,
+    so the text names bills and when they're due but never includes amounts.
+    """
+    attention, heads_up_ids = [], []
     for item in items:
-        status = due_status(item["next_due_date"], today, item["reminder_days_before"], item["is_active"])
-        if status in ("overdue", "due_soon"):
-            attention.append(((item["next_due_date"] - today).days, item["name"]))
+        if needs_notification(item, today):
+            days = (item["next_due_date"] - today).days
+            attention.append((days, item["name"]))
+            if days > 0:
+                heads_up_ids.append(item["id"])
     if not attention:
-        return None
+        return None, []
 
     attention.sort()
     n = len(attention)
@@ -311,9 +333,10 @@ def build_digest(items, today):
         lines.append(f"{name}: {_due_phrase(days)}")
     if n > DIGEST_MAX_LINES:
         lines.append(f"+{n - DIGEST_MAX_LINES} more")
-    return {
+    payload = {
         "title": "1 bill needs attention" if n == 1 else f"{n} bills need attention",
         "body": "\n".join(lines),
         "url": "/?tab=bills",
         "tag": "bills-digest",  # a newer digest replaces the old one instead of stacking
     }
+    return payload, heads_up_ids
